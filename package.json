@@ -1,0 +1,24 @@
+{
+    "name": "nomad-dance-academy",
+    "version": "1.0.0",
+    "main": "index.js",
+    "author": "Sultan IT Solutions",
+    "scripts": {
+        "dev": "concurrently \"yarn workspace @nomad-dance-academy/frontend dev\" \"yarn workspace @nomad-dance-academy/backend dev\"",
+        "build": "concurrently \"yarn workspace @nomad-dance-academy/frontend build\"",
+        "start": "",
+        "format": "prettier --write .",
+        "clean": "rimraf --glob \"**/node_modules\" \"**/.next\""
+    },
+    "workspaces": [
+        "./packages/*"
+    ],
+    "license": "ISC",
+    "description": "",
+    "dependencies": {
+        "concurrently": "^9.2.0",
+        "prettier": "^3.6.2",
+        "rimraf": "^6.0.1"
+    },
+    "private": true
+}
