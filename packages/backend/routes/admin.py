@@ -1298,7 +1298,7 @@ async def get_teacher_groups(teacher_id: int, user: dict = Depends(require_admin
 
 @router.post("/teachers")
 async def create_teacher(data: CreateTeacherRequest, user: dict = Depends(require_admin)):
-    from ..auth import get_password_hash
+    from app.auth import get_password_hash
     pool = await get_connection()
     hashed_password = get_password_hash(data.password)
     async with pool.acquire() as conn:
@@ -1323,7 +1323,7 @@ async def create_teacher(data: CreateTeacherRequest, user: dict = Depends(requir
 
 @router.put("/teachers/{teacher_id}")
 async def update_teacher(teacher_id: int, data: UpdateTeacherRequest, user: dict = Depends(require_admin)):
-    from ..auth import get_password_hash
+    from app.auth import get_password_hash
     pool = await get_connection()
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -1425,7 +1425,7 @@ async def get_students(user: dict = Depends(require_admin)):
     }
 @router.post("/students")
 async def create_student(data: CreateStudentRequest, user: dict = Depends(require_admin)):
-    from ..auth import get_password_hash
+    from app.auth import get_password_hash
     pool = await get_connection()
     hashed_password = get_password_hash(data.password)
     async with pool.acquire() as conn:
@@ -1449,7 +1449,7 @@ async def create_student(data: CreateStudentRequest, user: dict = Depends(requir
     return {"student_id": student_row["id"]}
 @router.put("/students/{student_id}")
 async def update_student(student_id: int, data: UpdateStudentRequest, user: dict = Depends(require_admin)):
-    from ..auth import get_password_hash
+    from app.auth import get_password_hash
     from datetime import datetime
     pool = await get_connection()
     async with pool.acquire() as conn:
@@ -1809,10 +1809,9 @@ async def create_group_lessons(group_id: int, data: CreateLessonScheduleRequest,
                     raise HTTPException(status_code=400, detail="Invalid repeat_until date format. Use YYYY-MM-DD")
                 current_date = lesson_date
                 while current_date <= end_date and lessons_created < 100:
-                    from datetime import timezone, timedelta
-                    local_tz = timezone(timedelta(hours=5))
-                    lesson_datetime = datetime.combine(current_date, start_time, local_tz)
-                    lesson_end_datetime = datetime.combine(current_date, end_time, local_tz)
+                    from datetime import timedelta
+                    lesson_datetime = datetime.combine(current_date, start_time)
+                    lesson_end_datetime = datetime.combine(current_date, end_time)
                     overlapping = await conn.fetchval(
                         """
                         SELECT id FROM lessons
