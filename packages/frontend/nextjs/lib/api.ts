@@ -1,4 +1,4 @@
-export const API_BASE_URL = "";
+export const API_BASE_URL = (import.meta as any).env.VITE_API_URL || 'http://localhost:8000';
 
 export function getAuthHeaders(): HeadersInit {
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
