@@ -1766,10 +1766,8 @@ async def create_group_lessons(group_id: int, data: CreateLessonScheduleRequest,
             if day_of_week == 7:
                 day_of_week = 0
             if not data.repeat_enabled:
-                from datetime import timezone, timedelta
-                local_tz = timezone(timedelta(hours=5))
-                lesson_datetime = datetime.combine(lesson_date, start_time, local_tz)
-                lesson_end_datetime = datetime.combine(lesson_date, end_time, local_tz)
+                lesson_datetime = datetime.combine(lesson_date, start_time)
+                lesson_end_datetime = datetime.combine(lesson_date, end_time)
                 overlapping = await conn.fetchval(
                     """
                     SELECT id FROM lessons
