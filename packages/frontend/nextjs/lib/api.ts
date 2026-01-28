@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'
 
 export async function api(path: string, options?: RequestInit) {
   return fetch(`${API_URL}${path}`, options)
