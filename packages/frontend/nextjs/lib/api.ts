@@ -1,4 +1,8 @@
-export const API_BASE_URL = (import.meta as any).env.VITE_API_URL || 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL
+
+export async function api(path: string, options?: RequestInit) {
+  return fetch(`${API_URL}${path}`, options)
+}
 
 export function getAuthHeaders(): HeadersInit {
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
