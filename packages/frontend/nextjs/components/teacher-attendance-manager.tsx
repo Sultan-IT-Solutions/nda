@@ -67,7 +67,7 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
 
   const fetchLessons = async () => {
     try {
-      const response = await fetch(`http://localhost:8001/admin/groups/${groupId}/lessons-attendance`, {
+      const response = await fetch(`/api/admin/groups/${groupId}/lessons-attendance`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -84,7 +84,7 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
 
   const fetchLessonAttendance = async (lessonId: number) => {
     try {
-      const response = await fetch(`http://localhost:8001/admin/groups/${groupId}/lessons/${lessonId}/attendance`, {
+      const response = await fetch(`/api/admin/groups/${groupId}/lessons/${lessonId}/attendance`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -135,7 +135,7 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
           status
         }))
 
-      const response = await fetch(`http://localhost:8001/admin/groups/${groupId}/lessons/${selectedLesson?.id}/attendance`, {
+      const response = await fetch(`/api/admin/groups/${groupId}/lessons/${selectedLesson?.id}/attendance`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -161,7 +161,7 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
     if (!selectedLesson) return
 
     try {
-      const response = await fetch(`http://localhost:8001/admin/lessons/${selectedLesson.id}`, {
+      const response = await fetch(`/api/admin/lessons/${selectedLesson.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -202,7 +202,7 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
       const [day, month, year] = rescheduleForm.new_date.split('/')
       const formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
 
-      const response = await fetch(`http://localhost:8001/teachers/reschedule-request`, {
+      const response = await fetch(`/api/teachers/reschedule-request`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
