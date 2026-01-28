@@ -4,14 +4,18 @@
     "main": "index.js",
     "author": "Sultan IT Solutions",
     "scripts": {
-        "dev": "concurrently \"yarn workspace @nomad-dance-academy/frontend dev\" \"yarn workspace @nomad-dance-academy/backend dev\"",
-        "build": "concurrently \"yarn workspace @nomad-dance-academy/frontend build\"",
+        "dev": "concurrently \"cd packages/frontend && npm run dev\" \"cd packages/backend && source ../../.venv/bin/activate && PYTHONPATH=/Users/User/Desktop/nda-main/packages/backend python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8001\"",
+        "dev:frontend": "cd packages/frontend && npm run dev",
+        "dev:backend": "cd packages/backend && source ../../.venv/bin/activate && PYTHONPATH=/Users/User/Desktop/nda-main/packages/backend python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8001",
+        "dev:nextjs": "cd packages/frontend/nextjs && npm run dev",
+        "build": "concurrently \"cd packages/frontend && npm run build\"",
         "start": "",
         "format": "prettier --write .",
         "clean": "rimraf --glob \"**/node_modules\" \"**/.next\""
     },
     "workspaces": [
-        "./packages/*"
+        "./packages/frontend",
+        "./packages/frontend/nextjs"
     ],
     "license": "ISC",
     "description": "",
