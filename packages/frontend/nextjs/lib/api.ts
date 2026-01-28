@@ -1,6 +1,6 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'
 
-export const API_BASE_URL = API_URL
+export const API_BASE_URL = '/api'
 
 export async function api(path: string, options?: RequestInit) {
   return fetch(`${API_URL}${path}`, options)
