@@ -87,10 +87,10 @@ export default function ManageGroupPage() {
       const headers: HeadersInit = { 'Authorization': `Bearer ${token}` };
 
       const [studentsResponse, statsResponse, groupResponse, lessonsResponse] = await Promise.all([
-        fetch(`http://localhost:8001/teachers/groups/${groupId}/students`, { headers }),
-        fetch(`http://localhost:8001/teachers/groups/${groupId}/stats`, { headers }),
-        fetch(`http://localhost:8001/teachers/groups/${groupId}`, { headers }),
-        fetch(`http://localhost:8001/teachers/groups/${groupId}/lessons`, { headers })
+        fetch(`/api/teachers/groups/${groupId}/students`, { headers }),
+        fetch(`/api/teachers/groups/${groupId}/stats`, { headers }),
+        fetch(`/api/teachers/groups/${groupId}`, { headers }),
+        fetch(`/api/teachers/groups/${groupId}/lessons`, { headers })
       ]);
 
       if (studentsResponse.ok) {
@@ -140,7 +140,7 @@ export default function ManageGroupPage() {
       const token = localStorage.getItem('token');
       if (!token) return;
 
-      const response = await fetch(`http://localhost:8001/teachers/groups/${groupId}/notes`, {
+      const response = await fetch(`/api/teachers/groups/${groupId}/notes`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -163,7 +163,7 @@ export default function ManageGroupPage() {
       const token = localStorage.getItem('token');
       if (!token) return;
 
-      const response = await fetch(`http://localhost:8001/teachers/lessons/${lessonId}/attendance`, {
+      const response = await fetch(`/api/teachers/lessons/${lessonId}/attendance`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
