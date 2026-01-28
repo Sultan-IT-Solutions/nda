@@ -38,8 +38,8 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
   });
 
   const handleSubmit = async () => {
-    if (!formData.name || !formData.direction || !formData.start_date) {
-      alert('Пожалуйста, заполните название группы, направление и дату начала');
+    if (!formData.name || !formData.start_date) {
+      alert('Пожалуйста, заполните название группы и дату начала');
       return;
     }
 
@@ -132,7 +132,7 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
 
           {}
           <div>
-            <Label htmlFor="direction">Направление *</Label>
+            <Label htmlFor="direction">Направление</Label>
             <Select value={formData.direction} onValueChange={(value) => handleInputChange('direction', value)}>
               <SelectTrigger className="mt-1">
                 <SelectValue placeholder="Выберите направление" />
