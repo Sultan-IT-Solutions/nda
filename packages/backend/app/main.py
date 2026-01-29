@@ -36,7 +36,14 @@ def _get_cors_origins():
     try:
         settings = get_settings()
         origins = getattr(settings, "cors_origins_list", None)
-        return origins if origins else ["*"]
+        if origins:
+            # Check if any origin contains wildcard pattern
+            has_wildcard = any("*" in origin for origin in origins)
+            if has_wildcard:
+                # If wildcards are used, allow all origins (CORS middleware doesn't support glob patterns)
+                return ["*"]
+            return origins
+        return ["*"]
     except Exception:
         traceback.print_exc()
         return ["*"]

@@ -86,10 +86,17 @@ export default function CategoriesPage() {
 
   const fetchCategories = async () => {
     try {
+      console.log("[v0] Fetching categories, token exists:", !!localStorage.getItem('token'))
       const response = await API.categories.getAll()
+      console.log("[v0] Categories response:", response)
       setCategories(response || [])
-    } catch (err) {
-      console.error("Error fetching categories:", err)
+    } catch (err: any) {
+      console.error("[v0] Error fetching categories:", err)
+      // If session expired, redirect to login
+      if (err.message?.includes('Сессия истекла')) {
+        router.push('/login')
+        return
+      }
       toast.error("Ошибка при загрузке категорий")
     }
   }
