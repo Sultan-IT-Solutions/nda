@@ -11,7 +11,8 @@ class Settings(BaseSettings):
     DB_NAME: str = "postgres"
     DB_USER: str = "postgres"
     DB_PASSWORD: str = "postgres"
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001"
+    # Include production frontend URLs
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001,https://nda-frontend.vercel.app,https://nda-frontend-*.vercel.app"
 
     @property
     def cors_origins_list(self) -> List[str]:

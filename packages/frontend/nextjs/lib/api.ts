@@ -26,13 +26,16 @@ export async function apiRequest<T = any>(
   options: RequestInit = {}
 ): Promise<T> {
   const url = `/api${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
+  const headers = {
+    ...getAuthHeaders(),
+    ...options.headers,
+  };
+  
+  console.log("[v0] API Request:", url, "Token present:", !!headers.Authorization);
 
   const response = await fetch(url, {
     ...options,
-    headers: {
-      ...getAuthHeaders(),
-      ...options.headers,
-    },
+    headers,
   });
 
   if (!response.ok) {
@@ -40,7 +43,18 @@ export async function apiRequest<T = any>(
     let errorMessage = error.detail || error.error || 'Request failed';
 
     if (response.status === 401) {
-      errorMessage = 'Неверный email или пароль';
+      // Check if this is a login request or an authenticated API request
+      const isLoginRequest = endpoint.includes('/auth/login');
+      if (isLoginRequest) {
+        errorMessage = 'Неверный email или пароль';
+      } else {
+        // For authenticated API calls, the token may be invalid or expired
+        errorMessage = 'Сессия истекла. Пожалуйста, войдите снова';
+        // Clear the invalid token
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('token');
+        }
+      }
     } else if (response.status === 400) {
       if (errorMessage.includes('пересекается')) {
       } else if (errorMessage.includes('email') && errorMessage.includes('пароль')) {
