@@ -1,9 +1,16 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'
+const API_URL = '/api'
 
 export const API_BASE_URL = '/api'
 
 export async function api(path: string, options?: RequestInit) {
-  return fetch(`${API_URL}${path}`, options)
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return fetch(`${API_URL}${normalizedPath}`, {
+    ...options,
+    headers: {
+      ...getAuthHeaders(),
+      ...options?.headers,
+    },
+  })
 }
 
 export function getAuthHeaders(): HeadersInit {
