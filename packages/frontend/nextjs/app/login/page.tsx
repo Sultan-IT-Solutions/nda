@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Eye, EyeOff } from "lucide-react"
 import { toast, Toaster } from 'sonner'
-import { API, handleApiError } from '@/lib/api'
+import { API, handleApiError, reset401Handler } from '@/lib/api'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -17,6 +17,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
 
   useEffect(() => {
+    reset401Handler()
 
     const loginMessage = localStorage.getItem("loginMessage")
     if (loginMessage) {
@@ -45,6 +46,7 @@ export default function LoginPage() {
     try {
       const data = await API.auth.login(email, password)
       localStorage.setItem("token", data.token)
+      reset401Handler()
 
       const userData = await API.users.me()
 

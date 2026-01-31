@@ -2,6 +2,8 @@ const API_URL = '/api'
 
 export const API_BASE_URL = '/api'
 
+let isHandling401 = false;
+
 export async function api(path: string, options?: RequestInit) {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   return fetch(`${API_URL}${normalizedPath}`, {
@@ -19,6 +21,10 @@ export function getAuthHeaders(): HeadersInit {
     'Content-Type': 'application/json',
     ...(token && { Authorization: `Bearer ${token}` }),
   };
+}
+
+export function reset401Handler(): void {
+  isHandling401 = false;
 }
 
 export async function apiRequest<T = any>(
@@ -43,16 +49,18 @@ export async function apiRequest<T = any>(
     let errorMessage = error.detail || error.error || 'Request failed';
 
     if (response.status === 401) {
-      // Check if this is a login request or an authenticated API request
       const isLoginRequest = endpoint.includes('/auth/login');
       if (isLoginRequest) {
         errorMessage = 'Неверный email или пароль';
       } else {
-        // For authenticated API calls, the token may be invalid or expired
-        errorMessage = 'Сессия истекла. Пожалуйста, войдите снова';
-        // Clear the invalid token
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('token');
+        if (!isHandling401) {
+          isHandling401 = true;
+          errorMessage = 'Сессия истекла. Пожалуйста, войдите снова';
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('token');
+          }
+        } else {
+          throw new Error('Session expired');
         }
       }
     } else if (response.status === 400) {
@@ -392,5 +400,6 @@ export function getUserRole(): string | null {
 export function logout(): void {
   if (typeof window !== 'undefined') {
     localStorage.removeItem('token');
+    isHandling401 = false;
   }
 }
