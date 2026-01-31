@@ -73,7 +73,6 @@
     "tailwindcss-animate": "^1.0.7",
     "terser": "latest",
     "tsx": "latest",
-    "vaul": "^0.9.9",
     "vite": "latest",
     "yaml": "latest",
     "zod": "3.25.76"
