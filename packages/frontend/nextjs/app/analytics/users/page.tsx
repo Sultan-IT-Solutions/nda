@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { formatDateTimeWithGMT5 } from "@/lib/utils";
 import { API, handleApiError } from "@/lib/api";
+import { buildLoginUrl, DEFAULT_SESSION_EXPIRED_MESSAGE } from "@/lib/auth";
 import { AdminSidebar } from "@/components/admin-sidebar";
 import { AdminHeader } from "@/components/admin-header";
 import { useSidebar } from "@/hooks/use-sidebar";
@@ -40,7 +41,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { toast, Toaster } from "sonner";
+import { toast } from "sonner";
 
 interface User {
   id: number;
@@ -76,6 +77,7 @@ const roleBadgeStyles: Record<string, string> = {
 
 export default function UsersPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const { sidebarWidth } = useSidebar();
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<Stats>({
@@ -105,11 +107,21 @@ export default function UsersPage() {
 
   const fetchData = async () => {
     try {
-      const userRes = await API.users.me();
+      let userRes: any
+      try {
+        userRes = await API.users.me();
+      } catch (err) {
+        const message = handleApiError(err)
+        if (message.includes('Требуется авторизация')) {
+          router.push(buildLoginUrl({ message: DEFAULT_SESSION_EXPIRED_MESSAGE, next: pathname }))
+          return
+        }
+        throw err
+      }
 
       if (userRes.user.role !== "admin") {
-        localStorage.setItem("loginMessage", "У вас нет доступа к этой странице");
-        router.push("/login");
+        toast.error("У вас нет доступа к этой странице")
+        router.push("/")
         return;
       }
 
@@ -214,13 +226,6 @@ export default function UsersPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <Toaster
-        position="top-right"
-        richColors
-        visibleToasts={5}
-        expand={true}
-        gap={8}
-      />
       <AdminSidebar />
 
       <div className={sidebarWidth + " transition-all duration-300"}>
@@ -295,9 +300,9 @@ export default function UsersPage() {
             </Card>
           </div>
 
-          {/* Filters */}
-          <div className="mb-8 flex gap-4">
-            <div className="relative flex-1 max-w-md">
+          {/* Filter */}          
+          <div className="mb-8 flex flex-col md:flex-row gap-4">
+            <div className="relative flex-1 md:max-w-md">
               <input
                 type="text"
                 placeholder="Поиск по имени, email или телефону..."
@@ -307,7 +312,7 @@ export default function UsersPage() {
               />
             </div>
             <Select value={roleFilter} onValueChange={setRoleFilter}>
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-full md:w-[200px]">
                 <SelectValue placeholder="Все роли" />
               </SelectTrigger>
               <SelectContent>
@@ -337,7 +342,7 @@ export default function UsersPage() {
               filteredUsers.map((user) => (
                 <Card key={user.id}>
                   <CardContent className="p-6">
-                    <div className="flex items-start gap-4">
+                    <div className="flex flex-col sm:flex-row sm:items-start gap-4">
                       <Avatar className="w-14 h-14">
                         <AvatarFallback className={`${
                           user.role === "admin"
@@ -350,8 +355,8 @@ export default function UsersPage() {
                         </AvatarFallback>
                       </Avatar>
 
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-2">
                           <h3 className="text-xl font-semibold">{user.name}</h3>
                           <Badge className={`${roleBadgeStyles[user.role]} flex items-center gap-1`}>
                             {getRoleIcon(user.role)}
@@ -362,14 +367,14 @@ export default function UsersPage() {
                           )}
                         </div>
 
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-x-8 gap-y-2 mb-4 text-sm">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-2 mb-4 text-sm">
                           <div>
                             <span className="text-gray-500">Email:</span>{" "}
-                            <span className="text-gray-900">{user.email}</span>
+                            <span className="text-gray-900 break-all">{user.email}</span>
                           </div>
                           <div>
                             <span className="text-gray-500">Телефон:</span>{" "}
-                            <span className="text-gray-900">{user.phone || "Не указан"}</span>
+                            <span className="text-gray-900 break-words">{user.phone || "Не указан"}</span>
                           </div>
                           <div>
                             <span className="text-gray-500">Дата регистрации:</span>{" "}
@@ -397,7 +402,7 @@ export default function UsersPage() {
                       </div>
 
                       {/* Action buttons */}
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2 sm:self-start">
                         <Button
                           variant="outline"
                           size="sm"

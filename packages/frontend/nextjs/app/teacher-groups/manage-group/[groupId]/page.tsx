@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Users, Clock, MapPin, Calendar, BookOpen, Settings, BarChart, Loader2, ArrowLeft } from 'lucide-react';
 import TeacherAttendanceManager from '@/components/teacher-attendance-manager';
+import { API } from '@/lib/api';
 
 interface Student {
   id: number;
@@ -78,53 +79,18 @@ export default function ManageGroupPage() {
   const fetchGroupData = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        router.push('/login');
-        return;
-      }
+      const [studentsData, statsData, groupData, lessonsData] = await Promise.all([
+        API.teachers.getGroupStudents(Number(groupId)),
+        API.teachers.getGroupStats(Number(groupId)),
+        API.teachers.getGroupDetails(Number(groupId)),
+        API.teachers.getGroupLessons(Number(groupId)),
+      ])
 
-      const headers: HeadersInit = { 'Authorization': `Bearer ${token}` };
-
-      const [studentsResponse, statsResponse, groupResponse, lessonsResponse] = await Promise.all([
-        fetch(`/api/teachers/groups/${groupId}/students`, { headers }),
-        fetch(`/api/teachers/groups/${groupId}/stats`, { headers }),
-        fetch(`/api/teachers/groups/${groupId}`, { headers }),
-        fetch(`/api/teachers/groups/${groupId}/lessons`, { headers })
-      ]);
-
-      if (studentsResponse.ok) {
-        const studentsData = await studentsResponse.json();
-        setStudents(studentsData.students || []);
-      } else {
-        console.error('Failed to fetch students:', studentsResponse.status);
-        setStudents([]);
-      }
-
-      if (statsResponse.ok) {
-        const statsData = await statsResponse.json();
-        setGroupStats(statsData.stats || null);
-      } else {
-        console.error('Failed to fetch stats:', statsResponse.status);
-        setGroupStats(null);
-      }
-
-      if (groupResponse.ok) {
-        const groupData = await groupResponse.json();
-        setGroupDetails(groupData);
-        setGroupNotes(groupData.notes || '');
-      } else {
-        console.error('Failed to fetch group details:', groupResponse.status);
-      }
-
-      if (lessonsResponse.ok) {
-        const lessonsData = await lessonsResponse.json();
-
-        setLessons(lessonsData.lessons || []);
-      } else {
-        console.error('Failed to fetch lessons:', lessonsResponse.status);
-        setLessons([]);
-      }
+      setStudents(studentsData.students || [])
+      setGroupStats(statsData.stats || null)
+      setGroupDetails(groupData)
+      setGroupNotes(groupData.notes || '')
+      setLessons(lessonsData.lessons || [])
     } catch (error) {
       console.error('Error fetching group data:', error);
       setStudents([]);
@@ -137,21 +103,8 @@ export default function ManageGroupPage() {
 
   const handleSaveNotes = async () => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) return;
-
-      const response = await fetch(`/api/teachers/groups/${groupId}/notes`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ notes: groupNotes })
-      });
-
-      if (response.ok) {
-        alert('Заметки сохранены!');
-      }
+      await API.teachers.saveGroupNotes(Number(groupId), groupNotes)
+      alert('Заметки сохранены!');
     } catch (error) {
       console.error('Error saving notes:', error);
     }
@@ -160,24 +113,13 @@ export default function ManageGroupPage() {
   const handleAttendanceUpdate = async (lessonId: number, studentId: number, status: 'P' | 'E' | 'L' | 'A') => {
     setAttendanceLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      if (!token) return;
+      await API.teachers.saveLessonAttendance(lessonId, {
+        attendance_records: [{
+          student_id: studentId,
+          status: status
+        }]
+      })
 
-      const response = await fetch(`/api/teachers/lessons/${lessonId}/attendance`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          attendance_records: [{
-            student_id: studentId,
-            status: status
-          }]
-        })
-      });
-
-      if (response.ok) {
         setLessons(prev => prev.map(lesson => {
           if (lesson.id === lessonId) {
             const existingRecordIndex = lesson.attendance_records?.findIndex(
@@ -206,9 +148,6 @@ export default function ManageGroupPage() {
           }
           return lesson;
         }));
-      } else {
-        console.error('Failed to save attendance');
-      }
     } catch (error) {
       console.error('Error updating attendance:', error);
     } finally {
@@ -262,7 +201,7 @@ export default function ManageGroupPage() {
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {groupStats ? (
                 <>
                   <Card>
@@ -292,27 +231,9 @@ export default function ManageGroupPage() {
                       <div className="text-2xl font-bold">{groupStats.average_attendance}%</div>
                     </CardContent>
                   </Card>
-                  <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Проведено уроков</CardTitle>
-                      <BookOpen className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{groupStats.total_lessons}</div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Предстоящих уроков</CardTitle>
-                      <Calendar className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{groupStats.upcoming_lessons}</div>
-                    </CardContent>
-                  </Card>
                 </>
               ) : (
-                <div className="col-span-5 text-center py-8">
+                <div className="col-span-3 text-center py-8">
                   {loading ? (
                     <div className="flex items-center justify-center">
                       <Loader2 className="w-6 h-6 animate-spin" />

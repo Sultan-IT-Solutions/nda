@@ -38,8 +38,8 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
   });
 
   const handleSubmit = async () => {
-    if (!formData.name || !formData.start_date) {
-      alert('Пожалуйста, заполните название группы и дату начала');
+    if (!formData.name || !formData.direction || !formData.start_date) {
+      alert('Пожалуйста, заполните название группы, направление и дату начала');
       return;
     }
 
@@ -118,7 +118,6 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
         </DialogHeader>
 
         <div className="space-y-4 mt-6">
-          {}
           <div>
             <Label htmlFor="name">Название группы *</Label>
             <Input
@@ -130,9 +129,8 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
             />
           </div>
 
-          {}
           <div>
-            <Label htmlFor="direction">Направление</Label>
+            <Label htmlFor="direction">Направление *</Label>
             <Select value={formData.direction} onValueChange={(value) => handleInputChange('direction', value)}>
               <SelectTrigger className="mt-1">
                 <SelectValue placeholder="Выберите направление" />
@@ -153,7 +151,6 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
             </Select>
           </div>
 
-          {}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="level">Уровень</Label>
@@ -183,7 +180,6 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
             </div>
           </div>
 
-          {}
           <div>
             <Label htmlFor="duration">Продолжительность занятия (минуты)</Label>
             <Select value={formData.duration_minutes} onValueChange={(value) => handleInputChange('duration_minutes', value)}>
@@ -199,7 +195,6 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
             </Select>
           </div>
 
-          {}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="start_date">Дата начала *</Label>
@@ -269,7 +264,6 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
             </div>
           </div>
 
-          {}
           <div className="flex items-center space-x-2">
             <input
               type="checkbox"
@@ -283,7 +277,6 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
             </Label>
           </div>
 
-          {}
           <div>
             <Label htmlFor="description">Описание (необязательно)</Label>
             <Textarea
@@ -297,7 +290,6 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
           </div>
         </div>
 
-        {}
         <div className="flex justify-end gap-3 pt-4 border-t">
           <Button variant="outline" onClick={onCloseAction} disabled={submitting}>
             Отмена

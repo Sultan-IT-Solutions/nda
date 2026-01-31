@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter, useParams } from "next/navigation"
+import { usePathname, useRouter, useParams } from "next/navigation"
 import { ArrowLeft, Users, Calendar, MapPin, Clock, Plus, PencilSimple, Trash, X, Tag } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Toaster, toast } from 'sonner'
+import { toast } from 'sonner'
 import AttendanceManager from "@/components/attendance-manager"
 import { format } from "date-fns"
 import { ru } from "date-fns/locale"
@@ -34,7 +34,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { API, isAuthenticated, logout, handleApiError } from "@/lib/api"
+import { API, AUTH_REQUIRED_MESSAGE, logout, handleApiError } from "@/lib/api"
+import { DEFAULT_SESSION_EXPIRED_MESSAGE, buildLoginUrl } from "@/lib/auth"
 
 interface Group {
   id: number
@@ -85,6 +86,7 @@ interface AvailableStudent {
 
 export default function GroupDetailPage() {
   const router = useRouter()
+  const pathname = usePathname()
   const params = useParams()
   const groupId = parseInt(params.groupId as string)
 
@@ -124,15 +126,33 @@ export default function GroupDetailPage() {
   const [attendanceRefreshKey, setAttendanceRefreshKey] = useState(0)
 
   useEffect(() => {
-    if (!isAuthenticated()) {
-      router.push("/login")
-      return
+    const init = async () => {
+      try {
+        const userData = await API.users.me()
+        if (userData.user.role !== 'admin') {
+          router.push('/')
+          return
+        }
+
+        fetchGroupDetails()
+        fetchHalls()
+        fetchTeachers()
+        fetchCategories()
+        fetchAvailableStudents()
+      } catch (err) {
+        const message = handleApiError(err)
+        if (message === AUTH_REQUIRED_MESSAGE) {
+          router.push(
+            buildLoginUrl({ message: DEFAULT_SESSION_EXPIRED_MESSAGE, next: pathname })
+          )
+          return
+        }
+        toast.error(message)
+        setLoading(false)
+      }
     }
-    fetchGroupDetails()
-    fetchHalls()
-    fetchTeachers()
-    fetchCategories()
-    fetchAvailableStudents()
+
+    init()
   }, [groupId])
 
   const fetchGroupDetails = async () => {
@@ -418,9 +438,6 @@ export default function GroupDetailPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Toaster position="top-right" richColors />
-
-      {}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
@@ -520,11 +537,11 @@ export default function GroupDetailPage() {
         </div>
       </div>
 
-      {}
+
       <div className="max-w-7xl mx-auto px-6 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
-          {}
+
           <div className="lg:col-span-1 space-y-6">
             <Card>
               <CardHeader>
@@ -767,7 +784,7 @@ export default function GroupDetailPage() {
               </CardContent>
             </Card>
 
-            {}
+    
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
@@ -804,7 +821,7 @@ export default function GroupDetailPage() {
             </Card>
           </div>
 
-          {}
+    
           <div className="lg:col-span-2">
             <Card>
               <CardHeader>
@@ -878,7 +895,7 @@ export default function GroupDetailPage() {
               </CardContent>
             </Card>
 
-            {}
+
             <Card className="mt-6">
               <CardHeader>
                 <CardTitle>Посещаемость</CardTitle>
@@ -894,7 +911,6 @@ export default function GroupDetailPage() {
         </div>
       </div>
 
-      {}
       <Dialog open={showAddStudentDialog} onOpenChange={setShowAddStudentDialog}>
         <DialogContent>
           <DialogHeader>
@@ -979,14 +995,13 @@ export default function GroupDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {}
+
       <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Добавить расписание</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            {}
             {group?.start_date && group?.end_date && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                 <div className="text-sm font-medium text-blue-900 mb-1">Период активности группы:</div>
@@ -1065,7 +1080,7 @@ export default function GroupDetailPage() {
               </div>
             </div>
 
-            {}
+
             {scheduleForm.start_time && scheduleForm.end_time && scheduleForm.start_time < scheduleForm.end_time && (
               <div className="bg-green-50 border border-green-200 rounded-lg p-2">
                 <div className="text-sm text-green-700">
@@ -1074,7 +1089,7 @@ export default function GroupDetailPage() {
               </div>
             )}
 
-            {}
+
             <div className="border-t pt-4">
               <div className="flex items-center space-x-2 mb-3">
                 <input

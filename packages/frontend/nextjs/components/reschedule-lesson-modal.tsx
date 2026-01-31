@@ -108,7 +108,6 @@ export default function RescheduleLessonModal({
         </DialogHeader>
 
         <div className="space-y-4">
-          {}
           <div className="bg-gray-50 p-3 rounded-lg">
             <div className="flex items-center gap-2 mb-1">
               <Info className="w-4 h-4 text-blue-500" />
@@ -126,7 +125,6 @@ export default function RescheduleLessonModal({
             </p>
           </div>
 
-          {}
           <div>
             <Label htmlFor="newDate" className="text-sm font-medium">
               Новая дата <span className="text-red-500">*</span>
@@ -162,7 +160,6 @@ export default function RescheduleLessonModal({
             </Popover>
           </div>
 
-          {}
           <div>
             <Label htmlFor="newTime" className="text-sm font-medium">
               Новое время начала <span className="text-red-500">*</span>
@@ -177,7 +174,6 @@ export default function RescheduleLessonModal({
             <p className="text-xs text-gray-500 mt-1">Урок закончится в 11:00</p>
           </div>
 
-          {}
           <div>
             <Label htmlFor="reason" className="text-sm font-medium">
               Причина переноса <span className="text-red-500">*</span>
@@ -192,7 +188,6 @@ export default function RescheduleLessonModal({
             />
           </div>
 
-          {}
           <Alert className="border-blue-200 bg-blue-50">
             <Info className="w-4 h-4 text-blue-500" />
             <AlertDescription className="text-sm text-blue-700">
@@ -202,7 +197,6 @@ export default function RescheduleLessonModal({
           </Alert>
         </div>
 
-        {}
         <div className="flex justify-end gap-3 pt-4 border-t">
           <Button variant="outline" onClick={onCloseAction} disabled={submitting}>
             Отмена

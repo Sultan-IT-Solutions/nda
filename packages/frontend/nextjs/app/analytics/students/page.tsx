@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { formatDateTimeWithGMT5 } from "@/lib/utils";
-import { API, handleApiError } from "@/lib/api";
+import { buildLoginUrl, DEFAULT_SESSION_EXPIRED_MESSAGE } from "@/lib/auth";
+import { API, AUTH_REQUIRED_MESSAGE, handleApiError } from "@/lib/api";
 import { AdminSidebar } from "@/components/admin-sidebar";
 import { AdminHeader } from "@/components/admin-header";
 import { useSidebar } from "@/hooks/use-sidebar";
@@ -24,7 +25,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { toast, Toaster } from "sonner";
+import { toast } from "sonner";
 
 interface StudentGroup {
   groupName: string;
@@ -56,6 +57,7 @@ interface Stats {
 
 export default function StudentsAnalyticsPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const { sidebarWidth } = useSidebar();
   const [students, setStudents] = useState<Student[]>([]);
   const [stats, setStats] = useState<Stats>({
@@ -108,11 +110,21 @@ export default function StudentsAnalyticsPage() {
 
   const fetchData = async () => {
     try {
-      const userRes = await API.users.me();
+      let userRes: any
+      try {
+        userRes = await API.users.me();
+      } catch (err) {
+        const message = handleApiError(err)
+        if (message === AUTH_REQUIRED_MESSAGE) {
+          router.push(buildLoginUrl({ message: DEFAULT_SESSION_EXPIRED_MESSAGE, next: pathname }))
+          return
+        }
+        throw err
+      }
 
       if (userRes.user.role !== "admin") {
-        localStorage.setItem("loginMessage", "У вас нет доступа к этой странице")
-        router.push("/login")
+        toast.error("У вас нет доступа к этой странице")
+        router.push("/")
         return
       }
 
@@ -162,14 +174,6 @@ export default function StudentsAnalyticsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <Toaster
-        position="top-right"
-        richColors
-        visibleToasts={5}
-        expand={true}
-        gap={8}
-      />
-
       <AdminSidebar />
 
       <div className={sidebarWidth + " transition-all duration-300"}>
@@ -378,12 +382,6 @@ export default function StudentsAnalyticsPage() {
 
                       {/* Additional Info */}
                       <div className="flex items-center gap-6 text-sm">
-                        <div className="flex items-center gap-2">
-                          <Calendar className="w-4 h-4 text-gray-500" />
-                          <span className="text-gray-600">
-                            Осталось занятий: <span className="font-semibold">{student.lessonsRemaining}</span>
-                          </span>
-                        </div>
                         {student.subscriptionUntil && (
                           <div>
                             <span className="text-gray-600">

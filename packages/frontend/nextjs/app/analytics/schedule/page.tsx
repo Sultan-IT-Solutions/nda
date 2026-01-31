@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { API, handleApiError } from "@/lib/api"
+import { API, handleApiError, logout } from "@/lib/api"
 import { AdminSidebar } from "@/components/admin-sidebar"
 import { AdminHeader } from "@/components/admin-header"
 import { useSidebar } from "@/hooks/use-sidebar"
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Toaster, toast } from 'sonner'
+import { toast } from 'sonner'
 import { formatTimeWithGMT5 } from "@/lib/utils"
 import {
   Dialog,
@@ -165,7 +165,7 @@ export default function AnalyticsSchedulePage() {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem("token")
+    logout()
     toast.success("Вы успешно вышли из системы")
     router.push("/login")
   }
@@ -510,28 +510,14 @@ export default function AnalyticsSchedulePage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Toaster
-        position="top-right"
-        richColors
-        visibleToasts={5}
-        expand={true}
-        gap={8}
-      />
-
       <AdminSidebar />
-
-      {}
       <div className={sidebarWidth + " transition-all duration-300"}>
         <AdminHeader userName={user?.name} userEmail={user?.email} />
-
-        {}
         <main className="p-8">
         <div className="mb-6">
           <h1 className="text-3xl font-bold mb-2">Расписание</h1>
           <p className="text-gray-600">Отображается в окошке календаря</p>
         </div>
-
-        {}
         <div className="grid grid-cols-3 gap-4 mb-6">
           <div>
             <label className="text-sm font-medium mb-2 block">Зал</label>
@@ -579,7 +565,6 @@ export default function AnalyticsSchedulePage() {
           </div>
         </div>
 
-        {}
         <div className="flex items-center justify-center gap-4 mb-6">
           <Button variant="outline" size="icon" onClick={handlePreviousWeek}>
             <CaretLeft size={20} />
@@ -595,7 +580,6 @@ export default function AnalyticsSchedulePage() {
           </Button>
         </div>
 
-        {}
         {(() => {
           const HOUR_HEIGHT = 80;
           const CARD_HEIGHT = 85;
@@ -658,7 +642,6 @@ export default function AnalyticsSchedulePage() {
 
           return (
             <div className="bg-white rounded-lg border overflow-x-auto">
-              {}
               <div className="grid grid-cols-[80px_repeat(7,minmax(180px,1fr))] border-b bg-gray-50">
                 <div className="p-4 text-center border-r">
                   <div className="font-medium text-gray-500 text-sm">Время</div>
@@ -671,21 +654,18 @@ export default function AnalyticsSchedulePage() {
                 ))}
               </div>
 
-              {}
               {timeSlots.map((slot, slotIndex) => (
                 <div
                   key={slot.hour}
                   className="grid grid-cols-[80px_repeat(7,minmax(180px,1fr))] border-b last:border-b-0"
                   style={{ minHeight: `${slotHeights[slotIndex]}px` }}
                 >
-                  {}
                   <div className="border-r flex items-start justify-center pt-2">
                     <span className="text-xs text-gray-500 font-medium">
                       {slot.label}
                     </span>
                   </div>
 
-                  {}
                   {weekDays.map((day, dayIndex) => {
                     const slotLessons = getLessonsForSlot(dayIndex, slot.hour);
 
@@ -808,11 +788,7 @@ export default function AnalyticsSchedulePage() {
             </div>
           );
         })()}
-
-        {}
         {/* Lesson detail dialog removed - use 3-dots menu instead */}
-
-        {}
         <Dialog open={substituteDialogOpen} onOpenChange={setSubstituteDialogOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
@@ -859,9 +835,6 @@ export default function AnalyticsSchedulePage() {
             </div>
           </DialogContent>
         </Dialog>
-
-        {}
-        {}
         <Dialog open={rescheduleDialogOpen} onOpenChange={setRescheduleDialogOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
@@ -929,9 +902,6 @@ export default function AnalyticsSchedulePage() {
             </div>
           </DialogContent>
         </Dialog>
-
-        {}
-        {}
         <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>

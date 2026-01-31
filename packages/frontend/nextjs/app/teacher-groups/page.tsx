@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { Users, Clock, MapPin, Plus, Loader } from "lucide-react"
 import { SignOut, User } from "@phosphor-icons/react"
 import RescheduleLessonModal from "@/components/reschedule-lesson-modal"
@@ -17,9 +17,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Toaster, toast } from 'sonner'
+import { toast } from 'sonner'
 import { formatTimeWithGMT5, formatDateWithGMT5 } from "@/lib/utils"
-import { API, handleApiError, isAuthenticated, logout } from "@/lib/api"
+import { buildLoginUrl, DEFAULT_SESSION_EXPIRED_MESSAGE } from "@/lib/auth"
+import { API, AUTH_REQUIRED_MESSAGE, handleApiError, logout } from "@/lib/api"
 
 interface Group {
   id: number
@@ -45,6 +46,7 @@ interface UserData {
 
 export default function TeacherGroupsPage() {
   const router = useRouter()
+  const pathname = usePathname()
   const [user, setUser] = useState<UserData | null>(null)
   const [groups, setGroups] = useState<Group[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -55,12 +57,6 @@ export default function TeacherGroupsPage() {
 
   useEffect(() => {
     const checkRoleAndFetch = async () => {
-      if (!isAuthenticated()) {
-        localStorage.setItem("loginMessage", "Ваша сессия истекла, войдите в систему заново")
-        router.push("/login")
-        return
-      }
-
       try {
         const userData = await API.users.me()
         setUser(userData.user)
@@ -79,7 +75,13 @@ export default function TeacherGroupsPage() {
         await fetchTeacherGroups()
       } catch (err) {
         console.error("Error checking role:", err)
-        handleApiError(err)
+        const message = handleApiError(err)
+        if (message === AUTH_REQUIRED_MESSAGE) {
+          router.push(buildLoginUrl({ message: DEFAULT_SESSION_EXPIRED_MESSAGE, next: pathname }))
+          return
+        }
+
+        toast.error(message)
         setError("Ошибка при проверке доступа")
         setIsLoading(false)
       }
@@ -195,6 +197,13 @@ export default function TeacherGroupsPage() {
                     onClick={() => router.push("/teacher-groups")}
                   >
                     Мои группы
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="text-foreground/70 hover:text-foreground text-sm"
+                    onClick={() => router.push("/teacher-groups/calendar")}
+                  >
+                    Расписание
                   </Button>
                   <Button
                     variant="ghost"

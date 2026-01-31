@@ -1,14 +1,14 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { SignOut, User, MapPin, Clock } from "@phosphor-icons/react"
 import { NotificationBell } from "@/components/notification-bell"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Toaster, toast } from 'sonner'
+import { toast } from 'sonner'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,7 +24,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { API, handleApiError, isAuthenticated, logout } from "@/lib/api"
+import { API, AUTH_REQUIRED_MESSAGE, handleApiError, logout } from "@/lib/api"
+import { DEFAULT_SESSION_EXPIRED_MESSAGE, buildLoginUrl } from "@/lib/auth"
 
 interface UserData {
   id: number
@@ -74,6 +75,7 @@ interface ScheduleGroup {
 
 export default function SchedulePage() {
   const router = useRouter()
+  const pathname = usePathname()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [user, setUser] = useState<UserData | null>(null)
@@ -94,11 +96,6 @@ export default function SchedulePage() {
 
   const handleEnroll = async (groupId: number, groupName: string, isTrial: boolean) => {
     try {
-      if (!isAuthenticated()) {
-        toast.error("Необходима авторизация")
-        return
-      }
-
       if (isTrial) {
         await API.groups.trial(groupId)
         toast.success(`Записаны на пробный урок: ${groupName}`)
@@ -107,19 +104,20 @@ export default function SchedulePage() {
         toast.success(`Записаны в группу: ${groupName}`)
       }
     } catch (err) {
-      toast.error(handleApiError(err))
+      const message = handleApiError(err)
+      if (message === AUTH_REQUIRED_MESSAGE) {
+        router.push(
+          buildLoginUrl({ message: DEFAULT_SESSION_EXPIRED_MESSAGE, next: pathname })
+        )
+        return
+      }
+      toast.error(message)
     }
   }
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        if (!isAuthenticated()) {
-          setError("Не авторизован. Пожалуйста, войдите.")
-          setLoading(false)
-          return
-        }
-
         const userData = await API.users.me()
         setUser(userData.user)
 
@@ -167,7 +165,14 @@ export default function SchedulePage() {
         setLoading(false)
       } catch (err) {
         console.error("Ошибка загрузки данных:", err)
-        setError(handleApiError(err))
+        const message = handleApiError(err)
+        if (message === AUTH_REQUIRED_MESSAGE) {
+          router.push(
+            buildLoginUrl({ message: DEFAULT_SESSION_EXPIRED_MESSAGE, next: pathname })
+          )
+          return
+        }
+        setError(message)
         setLoading(false)
       }
     }
@@ -223,13 +228,6 @@ export default function SchedulePage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Toaster
-        position="top-right"
-        richColors
-        visibleToasts={5}
-        expand={true}
-        gap={8}
-      />
       <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <nav className="flex items-center justify-between">
@@ -303,7 +301,6 @@ export default function SchedulePage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {}
         <div className="mb-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
@@ -374,14 +371,12 @@ export default function SchedulePage() {
           <p className="text-sm text-muted-foreground mt-4">Найдено {filteredGroups.length} групп</p>
         </div>
 
-        {}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredGroups.map((group) => (
             <Card
               key={group.id}
               className={`p-6 border ${group.borderColor} hover:shadow-lg transition-all ${group.bgColor} relative overflow-hidden`}
             >
-              {}
               <div className="absolute top-4 right-4">
                 <div className={`w-3 h-3 rounded-full ${group.isAvailable ? 'bg-green-500' : 'bg-gray-300'}`} />
               </div>
@@ -413,7 +408,6 @@ export default function SchedulePage() {
                 </div>
               </div>
 
-              {}
               {group.isTrial ? (
                 <Button
                   onClick={() => handleEnroll(group.id, group.name, true)}

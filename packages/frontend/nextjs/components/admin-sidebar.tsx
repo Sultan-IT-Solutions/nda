@@ -3,32 +3,12 @@
 import { useState, useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import {
-  ChartBar,
-  ChartPie,
-  Users,
-  CalendarBlank,
-  Clock,
-  Tag,
-  MapPin,
-  UserCircle,
-  CaretLeft,
-  CaretRight
-} from "@phosphor-icons/react"
+import { getCookie, setCookie } from "@/lib/client-cookies"
+import { CaretLeft, CaretRight } from "@phosphor-icons/react"
+import { adminNavItems } from "@/components/admin-nav"
 
-const navItems = [
-  { label: "Аналитика", icon: ChartPie, path: "/analytics" },
-  { label: "Аналитика залов", icon: ChartBar, path: "/analytics/halls" },
-  { label: "Аналитика преподавателей", icon: Users, path: "/analytics/teachers" },
-  { label: "Аналитика групп", icon: Users, path: "/analytics/groups" },
-  { label: "Расписание", icon: CalendarBlank, path: "/analytics/schedule" },
-  { label: "Заявки", icon: Clock, path: "/analytics/applications" },
-  { label: "Ученики", icon: Users, path: "/analytics/students" },
-  { label: "Пользователи", icon: UserCircle, path: "/analytics/users" },
-  { label: "Группы", icon: Users, path: "/groups" },
-  { label: "Категории", icon: Tag, path: "/analytics/categories" },
-  { label: "Залы", icon: MapPin, path: "/halls" },
-]
+const SIDEBAR_COLLAPSED_COOKIE = "nda_sidebar_collapsed"
+const SIDEBAR_COLLAPSED_MAX_AGE_SECONDS = 60 * 60 * 24 * 365
 
 export function AdminSidebar() {
   const router = useRouter()
@@ -36,22 +16,24 @@ export function AdminSidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false)
 
   useEffect(() => {
-    const saved = localStorage.getItem('sidebar-collapsed')
-    if (saved !== null) {
-      setIsCollapsed(saved === 'true')
-    }
+    const saved = getCookie(SIDEBAR_COLLAPSED_COOKIE)
+    if (saved !== null) setIsCollapsed(saved === 'true')
   }, [])
 
   const toggleCollapsed = () => {
     const newState = !isCollapsed
     setIsCollapsed(newState)
-    localStorage.setItem('sidebar-collapsed', String(newState))
+    setCookie(SIDEBAR_COLLAPSED_COOKIE, String(newState), {
+      maxAgeSeconds: SIDEBAR_COLLAPSED_MAX_AGE_SECONDS,
+      sameSite: 'Lax',
+      secure: typeof window !== 'undefined' ? window.location.protocol === 'https:' : false,
+    })
     window.dispatchEvent(new CustomEvent('sidebar-toggle', { detail: { collapsed: newState } }))
   }
 
   return (
     <aside
-      className={`fixed left-0 top-0 h-screen bg-gray-900 text-white p-4 z-50 transition-all duration-300 ${
+      className={`hidden md:block fixed left-0 top-0 h-screen bg-gray-900 text-white p-4 z-50 transition-all duration-300 ${
         isCollapsed ? 'w-16' : 'w-72'
       }`}
     >
@@ -65,7 +47,7 @@ export function AdminSidebar() {
       </div>
 
       <nav className="space-y-1">
-        {navItems.map((item) => {
+        {adminNavItems.map((item) => {
           const isActive = pathname === item.path
           const Icon = item.icon
 

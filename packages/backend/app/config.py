@@ -5,14 +5,20 @@ import os
 
 
 class Settings(BaseSettings):
+    ENV: str = "development"
     JWT_SECRET: str
+    REFRESH_TOKEN_DAYS: int = 30
+
+    DATABASE_URL: str | None = None
+
     DB_HOST: str = "localhost"
     DB_PORT: int = 5432
     DB_NAME: str = "postgres"
     DB_USER: str = "postgres"
     DB_PASSWORD: str = "postgres"
-    # Include production frontend URLs
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001,https://nda-frontend.vercel.app,https://nda-frontend-*.vercel.app"
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001"
+
+    ENABLE_CORS: bool = True
 
     @property
     def cors_origins_list(self) -> List[str]:

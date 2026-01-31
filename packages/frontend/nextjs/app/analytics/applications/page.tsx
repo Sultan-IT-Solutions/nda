@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { AdminSidebar } from "@/components/admin-sidebar"
 import { AdminHeader } from "@/components/admin-header"
 import { useSidebar } from "@/hooks/use-sidebar"
@@ -18,7 +18,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { formatTimeWithGMT5, formatDateWithGMT5 } from "@/lib/utils"
-import { API, handleApiError, isAuthenticated, logout } from "@/lib/api"
+import { API, AUTH_REQUIRED_MESSAGE, handleApiError, logout } from "@/lib/api"
+import { DEFAULT_SESSION_EXPIRED_MESSAGE, buildLoginUrl } from "@/lib/auth"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -58,6 +59,7 @@ interface RescheduleRequest {
 
 export default function ApplicationsPage() {
   const router = useRouter()
+  const pathname = usePathname()
   const { sidebarWidth } = useSidebar()
   const [user, setUser] = useState<UserData | null>(null)
   const [requests, setRequests] = useState<RescheduleRequest[]>([])
@@ -66,11 +68,6 @@ export default function ApplicationsPage() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      if (!isAuthenticated()) {
-        router.push("/login")
-        return
-      }
-
       try {
         const userData = await API.users.me()
         setUser(userData.user)
@@ -83,7 +80,13 @@ export default function ApplicationsPage() {
         await fetchRescheduleRequests()
       } catch (error) {
         console.error("Failed to fetch user data:", error)
-        handleApiError(error)
+        const message = handleApiError(error)
+        if (message === AUTH_REQUIRED_MESSAGE) {
+          router.push(
+            buildLoginUrl({ message: DEFAULT_SESSION_EXPIRED_MESSAGE, next: pathname })
+          )
+          return
+        }
         router.push("/login")
       }
     }
@@ -174,11 +177,11 @@ export default function ApplicationsPage() {
     <div className="min-h-screen bg-background">
       <AdminSidebar />
 
-      {}
+
       <main className={sidebarWidth + " transition-all duration-300 min-h-screen"}>
         <AdminHeader userName={user?.name} userEmail={user?.email} />
 
-        {}
+        
         <div className="p-6">
           <div className="mb-6">
             <h1 className="text-2xl font-bold text-gray-900">Заявки на перенос занятий</h1>
@@ -187,7 +190,7 @@ export default function ApplicationsPage() {
             </p>
           </div>
 
-          {}
+          
           {isLoading && (
             <div className="flex items-center justify-center py-16">
               <div className="text-center">
@@ -197,14 +200,14 @@ export default function ApplicationsPage() {
             </div>
           )}
 
-          {}
+        
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
               <p className="text-red-600 text-sm font-medium">Ошибка: {error}</p>
             </div>
           )}
 
-          {}
+        
           {!isLoading && !error && requests.length === 0 && (
             <div className="text-center py-16">
               <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-4" />
@@ -215,7 +218,7 @@ export default function ApplicationsPage() {
             </div>
           )}
 
-          {}
+        
           {!isLoading && !error && requests.length > 0 && (
             <div className="space-y-6">
               {requests.map((request) => (
@@ -242,7 +245,6 @@ export default function ApplicationsPage() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
-                    {}
                     <div className="space-y-2">
                       <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
                         <Clock className="w-4 h-4" />
@@ -258,7 +260,6 @@ export default function ApplicationsPage() {
                       </div>
                     </div>
 
-                    {}
                     <div className="space-y-2">
                       <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
                         <Calendar className="w-4 h-4" />
@@ -275,7 +276,7 @@ export default function ApplicationsPage() {
                     </div>
                   </div>
 
-                  {}
+                  
                   {request.reason && (
                     <div className="mb-4">
                       <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
@@ -288,7 +289,7 @@ export default function ApplicationsPage() {
                     </div>
                   )}
 
-                  {}
+                
                   {request.admin_response && (
                     <div className="mb-4">
                       <h4 className="text-sm font-medium text-gray-700 mb-2">
@@ -302,7 +303,7 @@ export default function ApplicationsPage() {
                     </div>
                   )}
 
-                  {}
+                
                   {request.status === "pending" && (
                     <div className="flex gap-3 pt-4 border-t border-gray-100">
                       <Button
@@ -331,7 +332,7 @@ export default function ApplicationsPage() {
                     </div>
                   )}
 
-                  {}
+                  
                   <div className="pt-4 border-t border-gray-100 mt-4">
                     <p className="text-xs text-gray-500">
                       Заявка подана:{" "}

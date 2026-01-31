@@ -5,16 +5,19 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Progress } from "@/components/ui/progress"
 import { Play, Pencil } from "@phosphor-icons/react"
 import { Calendar, Clock } from "lucide-react"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 import { format, parse } from "date-fns"
 import { ru } from "date-fns/locale"
+import { apiRequest } from "@/lib/api"
+import { cn } from "@/lib/utils"
 
 interface Lesson {
   id: number
@@ -67,12 +70,7 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
 
   const fetchLessons = async () => {
     try {
-      const response = await fetch(`/api/admin/groups/${groupId}/lessons-attendance`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      })
-      const data = await response.json()
+      const data = await apiRequest(`/admin/groups/${groupId}/lessons-attendance`)
       console.log('Fetched lessons data:', data)
       setLessons(data.lessons || [])
       setLoading(false)
@@ -84,12 +82,7 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
 
   const fetchLessonAttendance = async (lessonId: number) => {
     try {
-      const response = await fetch(`/api/admin/groups/${groupId}/lessons/${lessonId}/attendance`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      })
-      const data = await response.json()
+      const data = await apiRequest(`/admin/groups/${groupId}/lessons/${lessonId}/attendance`)
       setStudents(data.students || [])
 
       const initialAttendance: {[key: number]: string} = {}
@@ -135,22 +128,14 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
           status
         }))
 
-      const response = await fetch(`/api/admin/groups/${groupId}/lessons/${selectedLesson?.id}/attendance`, {
+      await apiRequest(`/admin/groups/${groupId}/lessons/${selectedLesson?.id}/attendance`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
         body: JSON.stringify({ attendance })
       })
 
-      if (response.ok) {
         toast.success('Посещаемость сохранена')
         setShowAttendanceModal(false)
         fetchLessons()
-      } else {
-        toast.error('Ошибка при сохранении посещаемости')
-      }
     } catch (err) {
       console.error('Error saving attendance:', err)
       toast.error('Ошибка при сохранении посещаемости')
@@ -161,24 +146,16 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
     if (!selectedLesson) return
 
     try {
-      const response = await fetch(`/api/admin/lessons/${selectedLesson.id}`, {
+      await apiRequest(`/admin/lessons/${selectedLesson.id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
         body: JSON.stringify({
           class_name: editForm.class_name
         })
       })
 
-      if (response.ok) {
         toast.success('Название занятия обновлено')
         setShowEditModal(false)
         fetchLessons()
-      } else {
-        toast.error('Ошибка при обновлении названия')
-      }
     } catch (err) {
       console.error('Error updating lesson:', err)
       toast.error('Ошибка при обновлении названия')
@@ -202,12 +179,8 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
       const [day, month, year] = rescheduleForm.new_date.split('/')
       const formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
 
-      const response = await fetch(`/api/teachers/reschedule-request`, {
+      await apiRequest(`/teachers/reschedule-request`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
         body: JSON.stringify({
           lesson_id: selectedLesson.id,
           new_start_time: `${formattedDate}T${rescheduleForm.new_time}:00`,
@@ -215,15 +188,10 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
         })
       })
 
-      if (response.ok) {
         toast.success('Запрос на перенос отправлен администратору')
         setShowRescheduleModal(false)
         setRescheduleForm({ new_date: '', new_time: '', reason: '' })
         fetchLessons()
-      } else {
-        const error = await response.json()
-        toast.error(error.detail || 'Ошибка при отправке запроса')
-      }
     } catch (err) {
       console.error('Error submitting reschedule request:', err)
       toast.error('Ошибка при отправке запроса')
@@ -359,116 +327,157 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
         </div>
       )}
 
-      {}
       <Dialog open={showAttendanceModal} onOpenChange={setShowAttendanceModal}>
-        <DialogContent className="max-w-5xl max-h-[85vh] overflow-hidden">
-          <DialogHeader className="pb-6 border-b">
-            <DialogTitle className="text-xl font-semibold">
-              Отметить посещаемость - {selectedLesson?.class_name}
-            </DialogTitle>
-            <div className="text-sm text-gray-600 mt-1">
-              {selectedLesson && (
-                <>
-                  {new Date(selectedLesson.start_time).toLocaleDateString('ru-RU', {
-                    weekday: 'long',
-                    day: 'numeric',
-                    month: 'long'
-                  })}, {new Date(selectedLesson.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                </>
-              )}
+        <DialogContent className="flex flex-col w-full sm:max-w-6xl max-h-[85vh] overflow-hidden p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b bg-background">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <DialogTitle className="text-xl font-semibold leading-tight break-words pr-10">
+                  Отметить посещаемость — {selectedLesson?.class_name}
+                </DialogTitle>
+                <DialogDescription className="mt-1">
+                  {selectedLesson && (
+                    <>
+                      {new Date(selectedLesson.start_time).toLocaleDateString('ru-RU', {
+                        weekday: 'long',
+                        day: 'numeric',
+                        month: 'long'
+                      })}{' '}
+                      ·{' '}
+                      {new Date(selectedLesson.start_time).toLocaleTimeString('ru-RU', {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </>
+                  )}
+                </DialogDescription>
+              </div>
             </div>
           </DialogHeader>
 
-          <div className="py-6">
-            {}
-            <div className="grid grid-cols-3 gap-6 pb-4 mb-6 border-b">
-              <div className="text-sm font-medium text-gray-700 uppercase tracking-wider">
-                Студент
+          <div className="flex-1 min-h-0 px-6 py-4 flex flex-col gap-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <Badge variant="secondary" className="bg-green-50 text-green-700 border border-green-200">P — присутствовал</Badge>
+                <Badge variant="secondary" className="bg-blue-50 text-blue-700 border border-blue-200">E — уваж. причина</Badge>
+                <Badge variant="secondary" className="bg-yellow-50 text-yellow-800 border border-yellow-200">L — опоздал</Badge>
+                <Badge variant="secondary" className="bg-red-50 text-red-700 border border-red-200">A — отсутствовал</Badge>
               </div>
-              <div className="text-sm font-medium text-gray-700 uppercase tracking-wider text-center">
-                Текущий статус
-              </div>
-              <div className="text-sm font-medium text-gray-700 uppercase tracking-wider text-center">
-                Отметить посещаемость
+              <div className="text-sm text-muted-foreground">
+                {Object.values(attendanceData).filter(Boolean).length} из {students.length} отмечено
               </div>
             </div>
+            <Progress
+              value={students.length ? (Object.values(attendanceData).filter(Boolean).length / students.length) * 100 : 0}
+            />
 
-            {}
-            <div className="space-y-4 max-h-[50vh] overflow-y-auto">
-              {students.map((student) => (
-                <div key={student.id} className="grid grid-cols-3 gap-6 items-center py-4 border-b border-gray-100 last:border-b-0">
-                  {}
-                  <div className="flex flex-col">
-                    <div className="font-medium text-gray-900 text-base">{student.name}</div>
-                    <div className="text-sm text-gray-500 mt-1">{student.email}</div>
+            <div className="flex-1 min-h-0 overflow-auto rounded-lg border">
+              <div className="min-w-0">
+                <div className="sticky top-0 z-10 grid grid-cols-[minmax(220px,1fr)_170px_220px] lg:grid-cols-[minmax(240px,1fr)_190px_260px] gap-3 lg:gap-4 bg-background/95 backdrop-blur border-b px-4 py-3">
+                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Студент
                   </div>
-
-                  {}
-                  <div className="flex justify-center">
-                    <span className={`inline-flex px-4 py-2 rounded-full text-sm font-medium border ${
-                      attendanceData[student.id] === 'P' ? 'bg-green-50 text-green-700 border-green-200' :
-                      attendanceData[student.id] === 'E' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                      attendanceData[student.id] === 'L' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
-                      attendanceData[student.id] === 'A' ? 'bg-red-50 text-red-700 border-red-200' :
-                      'bg-gray-50 text-gray-600 border-gray-200'
-                    }`}>
-                      {attendanceData[student.id] === 'P' ? 'Присутствовал' :
-                       attendanceData[student.id] === 'E' ? 'Уваж. причина' :
-                       attendanceData[student.id] === 'L' ? 'Опоздал' :
-                       attendanceData[student.id] === 'A' ? 'Отсутствовал' :
-                       'Не отмечено'}
-                    </span>
+                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider text-center">
+                    Текущий статус
                   </div>
-
-                  {}
-                  <div className="flex justify-center gap-2">
-                    {[
-                      { status: 'P', label: 'Присутствовал' },
-                      { status: 'E', label: 'Уваж. причина' },
-                      { status: 'L', label: 'Опоздал' },
-                      { status: 'A', label: 'Отсутствовал' }
-                    ].map(({ status, label }) => (
-                      <button
-                        key={status}
-                        className={`w-12 h-12 rounded-xl font-semibold text-base border-2 transition-all duration-200 ${
-                          attendanceData[student.id] === status
-                            ? status === 'P' ? 'bg-green-600 text-white border-green-600 shadow-md' :
-                              status === 'E' ? 'bg-blue-600 text-white border-blue-600 shadow-md' :
-                              status === 'L' ? 'bg-yellow-600 text-white border-yellow-600 shadow-md' :
-                              'bg-red-600 text-white border-red-600 shadow-md'
-                            : 'bg-gray-50 text-gray-600 border-gray-300 hover:border-gray-400 hover:bg-gray-100'
-                        }`}
-                        onClick={() => setAttendanceData(prev => ({
-                          ...prev,
-                          [student.id]: attendanceData[student.id] === status ? '' : status
-                        }))}
-                        title={label}
-                      >
-                        {status}
-                      </button>
-                    ))}
+                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider text-center">
+                    Отметить
                   </div>
                 </div>
-              ))}
+
+                <div className="divide-y">
+                  {students.map((student) => (
+                    <div
+                      key={student.id}
+                      className="grid grid-cols-[minmax(220px,1fr)_170px_220px] lg:grid-cols-[minmax(240px,1fr)_190px_260px] gap-3 lg:gap-4 items-center px-4 py-3 hover:bg-muted/40 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center text-sm font-semibold text-foreground">
+                          {(student.name || '?').trim().slice(0, 1).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-medium text-foreground truncate">{student.name}</div>
+                          <div className="text-sm text-muted-foreground truncate">{student.email}</div>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-center">
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "px-3 py-1 rounded-full border text-sm font-medium",
+                            attendanceData[student.id] === 'P' && "bg-green-50 text-green-700 border-green-200",
+                            attendanceData[student.id] === 'E' && "bg-blue-50 text-blue-700 border-blue-200",
+                            attendanceData[student.id] === 'L' && "bg-yellow-50 text-yellow-700 border-yellow-200",
+                            attendanceData[student.id] === 'A' && "bg-red-50 text-red-700 border-red-200",
+                            !attendanceData[student.id] && "bg-muted text-muted-foreground border-border"
+                          )}
+                        >
+                          {attendanceData[student.id] === 'P' ? 'Присутствовал' :
+                            attendanceData[student.id] === 'E' ? 'Уваж. причина' :
+                              attendanceData[student.id] === 'L' ? 'Опоздал' :
+                                attendanceData[student.id] === 'A' ? 'Отсутствовал' :
+                                  'Не отмечено'}
+                        </Badge>
+                      </div>
+
+                      <div className="flex justify-center gap-2 flex-wrap">
+                        {([
+                          { status: 'P', label: 'Присутствовал' },
+                          { status: 'E', label: 'Уваж. причина' },
+                          { status: 'L', label: 'Опоздал' },
+                          { status: 'A', label: 'Отсутствовал' }
+                        ] as const).map(({ status, label }) => (
+                          <Button
+                            key={status}
+                            type="button"
+                            variant="outline"
+                            size="icon-sm"
+                            className={cn(
+                              "h-10 w-10 font-semibold text-sm",
+                              attendanceData[student.id] === status && status === 'P' && "bg-green-600 text-white border-green-600 hover:bg-green-700",
+                              attendanceData[student.id] === status && status === 'E' && "bg-blue-600 text-white border-blue-600 hover:bg-blue-700",
+                              attendanceData[student.id] === status && status === 'L' && "bg-yellow-600 text-white border-yellow-600 hover:bg-yellow-700",
+                              attendanceData[student.id] === status && status === 'A' && "bg-red-600 text-white border-red-600 hover:bg-red-700"
+                            )}
+                            onClick={() =>
+                              setAttendanceData((prev) => {
+                                const current = prev[student.id] || ''
+                                return {
+                                  ...prev,
+                                  [student.id]: current === status ? '' : status
+                                }
+                              })
+                            }
+                            title={label}
+                          >
+                            {status}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="flex justify-between items-center pt-6 border-t bg-white">
-            <div className="text-sm text-gray-600">
-              {Object.values(attendanceData).filter(status => status).length} из {students.length} студентов отмечено
+          <div className="px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t bg-background">
+            <div className="text-sm text-muted-foreground">
+              Изменения сохранятся после нажатия «Сохранить».
             </div>
             <div className="flex gap-3">
               <Button
                 variant="outline"
                 onClick={() => setShowAttendanceModal(false)}
-                className="px-8 py-2 text-base"
+                className="px-8"
                 size="lg"
               >
                 Отмена
               </Button>
               <Button
                 onClick={handleSaveAttendance}
-                className="px-8 py-2 text-base bg-purple-600 hover:bg-purple-700"
+                className="px-8 bg-purple-600 hover:bg-purple-700"
                 size="lg"
               >
                 Сохранить посещаемость
@@ -478,7 +487,6 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
         </DialogContent>
       </Dialog>
 
-      {}
       <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
         <DialogContent className="max-w-md">
           <DialogHeader className="pb-4 border-b">
@@ -519,7 +527,6 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
         </DialogContent>
       </Dialog>
 
-      {}
       <Dialog open={showRescheduleModal} onOpenChange={setShowRescheduleModal}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader className="pb-4">

@@ -195,7 +195,6 @@ export default function CreateLessonModal({ isOpen, onCloseAction, onSubmitActio
               </div>
             )}
 
-            {}
             <div className="flex items-center space-x-2 text-sm text-gray-600">
               <input
                 type="checkbox"
@@ -207,7 +206,6 @@ export default function CreateLessonModal({ isOpen, onCloseAction, onSubmitActio
               <label htmlFor="additional">Дополнительный урок</label>
             </div>
 
-            {}
             <div>
               <Label className="text-base font-medium">Тип урока *</Label>
               <RadioGroup
@@ -229,7 +227,6 @@ export default function CreateLessonModal({ isOpen, onCloseAction, onSubmitActio
               </RadioGroup>
             </div>
 
-            {}
             <div>
               <Label htmlFor="group">Группа *</Label>
               <Select value={formData.group} onValueChange={(value) => handleInputChange('group', value)}>
@@ -246,7 +243,6 @@ export default function CreateLessonModal({ isOpen, onCloseAction, onSubmitActio
               </Select>
             </div>
 
-            {}
             {isAdmin && (
               <div>
                 <Label htmlFor="teacher">Учитель *</Label>
@@ -265,7 +261,6 @@ export default function CreateLessonModal({ isOpen, onCloseAction, onSubmitActio
               </div>
             )}
 
-            {}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="date">Дата *</Label>
@@ -311,7 +306,6 @@ export default function CreateLessonModal({ isOpen, onCloseAction, onSubmitActio
               </div>
             </div>
 
-            {}
             <div>
               <Label htmlFor="duration">Продолжительность (минуты) *</Label>
               <Input
@@ -325,7 +319,6 @@ export default function CreateLessonModal({ isOpen, onCloseAction, onSubmitActio
               <p className="text-sm text-gray-500 mt-1">Рекомендуемые значения: 30, 45, 60, 90, 120 минут</p>
             </div>
 
-            {}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="hall">Зал *</Label>
@@ -360,7 +353,6 @@ export default function CreateLessonModal({ isOpen, onCloseAction, onSubmitActio
               </div>
             </div>
 
-            {}
             <div>
               <Label htmlFor="topic">Тема занятия</Label>
               <Input
@@ -372,7 +364,6 @@ export default function CreateLessonModal({ isOpen, onCloseAction, onSubmitActio
               />
             </div>
 
-            {}
             <div>
               <Label htmlFor="comment">Комментарий</Label>
               <Textarea
@@ -385,7 +376,6 @@ export default function CreateLessonModal({ isOpen, onCloseAction, onSubmitActio
               />
             </div>
 
-            {}
             <div>
               <Label htmlFor="repeat">Повтор</Label>
               <Select value={formData.repeat} onValueChange={(value) => handleInputChange('repeat', value)}>
@@ -409,7 +399,6 @@ export default function CreateLessonModal({ isOpen, onCloseAction, onSubmitActio
           </TabsContent>
         </Tabs>
 
-        {}
         <div className="flex justify-end gap-3 pt-4 border-t">
           <Button variant="outline" onClick={onCloseAction} disabled={submitting}>
             Отмена

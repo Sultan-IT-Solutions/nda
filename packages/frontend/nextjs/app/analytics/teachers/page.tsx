@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { API, handleApiError } from "@/lib/api"
+import { API, handleApiError, logout } from "@/lib/api"
 import { AdminSidebar } from "@/components/admin-sidebar"
 import { AdminHeader } from "@/components/admin-header"
 import { useSidebar } from "@/hooks/use-sidebar"
@@ -18,7 +18,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Toaster, toast } from 'sonner'
+import { toast } from 'sonner'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -73,7 +73,7 @@ export default function TeacherAnalyticsPage() {
   const [totalGroups, setTotalGroups] = useState(0)
 
   const handleLogout = () => {
-    localStorage.removeItem("token")
+    logout()
     toast.success("Вы успешно вышли из системы")
     router.push("/login")
   }
@@ -190,21 +190,9 @@ export default function TeacherAnalyticsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Toaster
-        position="top-right"
-        richColors
-        visibleToasts={5}
-        expand={true}
-        gap={8}
-      />
-
       <AdminSidebar />
-
-      {}
       <div className={sidebarWidth + " transition-all duration-300"}>
         <AdminHeader userName={user?.name} userEmail={user?.email} />
-
-        {}
         <main className="p-8">
           <div className="mb-8 flex items-center justify-between">
             <div>
@@ -217,7 +205,6 @@ export default function TeacherAnalyticsPage() {
             </Button>
           </div>
 
-          {}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <Card className="border-0 shadow-sm">
               <CardContent className="p-5">
@@ -276,7 +263,6 @@ export default function TeacherAnalyticsPage() {
             </Card>
           </div>
 
-          {}
           <Card className="mb-6 border-0 shadow-sm">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold">Нагрузка преподавателей</CardTitle>
@@ -325,7 +311,6 @@ export default function TeacherAnalyticsPage() {
             <CardContent className="pt-0">
               {teachersData.length > 0 ? (
                 <div className="space-y-6">
-                  {}
                   <div className="space-y-4">
                     {teachersData.slice(0, 8).map((teacher, index) => {
                       const maxHours = Math.max(...teachersData.map(t => t.totalHours));
@@ -343,7 +328,6 @@ export default function TeacherAnalyticsPage() {
 
                       return (
                         <div key={teacher.teacherId} className="space-y-2">
-                          {}
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3 min-w-0">
                               <div className={`w-3 h-3 rounded-full bg-gradient-to-r ${colors[index % colors.length]} flex-shrink-0`} />
@@ -355,19 +339,16 @@ export default function TeacherAnalyticsPage() {
                             </div>
                           </div>
 
-                          {}
                           <div className="relative">
                             <div className="w-full bg-muted/30 rounded-full h-3 overflow-hidden">
                               <div
                                 className={`h-full bg-gradient-to-r ${colors[index % colors.length]} transition-all duration-500 ease-out relative`}
                                 style={{ width: `${percentage}%` }}
                               >
-                                {}
                                 <div className="absolute inset-0 bg-white/20 opacity-0 hover:opacity-100 transition-opacity duration-200" />
                               </div>
                             </div>
 
-                            {}
                             <div className="absolute right-2 top-0 bottom-0 flex items-center">
                               <span className="text-xs font-medium text-white/90 drop-shadow-sm">
                                 {Math.round(percentage)}%
@@ -379,7 +360,6 @@ export default function TeacherAnalyticsPage() {
                     })}
                   </div>
 
-                  {}
                   <div className="grid grid-cols-4 gap-4 pt-4 border-t">
                     <div className="text-center">
                       <div className="text-lg font-semibold text-foreground">{teachersData.reduce((sum, t) => sum + t.totalHours, 0)}</div>

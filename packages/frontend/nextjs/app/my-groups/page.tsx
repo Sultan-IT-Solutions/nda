@@ -1,14 +1,14 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { SignOut, User, MapPin, Clock, Calendar, Plus } from "@phosphor-icons/react"
 import { NotificationBell } from "@/components/notification-bell"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Toaster, toast } from 'sonner'
+import { toast } from 'sonner'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,7 +17,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { API, handleApiError, isAuthenticated, logout } from "@/lib/api"
+import { buildLoginUrl, DEFAULT_SESSION_EXPIRED_MESSAGE } from "@/lib/auth"
+import { API, AUTH_REQUIRED_MESSAGE, handleApiError, logout } from "@/lib/api"
 
 interface UserData {
   id: number
@@ -53,6 +54,7 @@ interface EnrolledGroup {
 
 export default function MyGroupsPage() {
   const router = useRouter()
+  const pathname = usePathname()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [user, setUser] = useState<UserData | null>(null)
@@ -67,12 +69,6 @@ export default function MyGroupsPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        if (!isAuthenticated()) {
-          localStorage.setItem("loginMessage", "Ваша сессия истекла, войдите в систему заново")
-          router.push("/login")
-          return
-        }
-
         const userData = await API.users.me()
         setUser(userData.user)
 
@@ -118,14 +114,20 @@ export default function MyGroupsPage() {
         setEnrolledGroups(transformed)
         setLoading(false)
       } catch (err) {
-        logout()
-        localStorage.setItem("loginMessage", "Ваша сессия истекла, войдите в систему заново")
-        router.push("/login")
+        const message = handleApiError(err)
+        if (message === AUTH_REQUIRED_MESSAGE) {
+          router.push(buildLoginUrl({ message: DEFAULT_SESSION_EXPIRED_MESSAGE, next: pathname }))
+          return
+        }
+
+        toast.error(message)
+        setError(message)
+        setLoading(false)
       }
     }
 
     fetchData()
-  }, [router])
+  }, [router, pathname])
 
   if (loading) {
     return (
@@ -157,13 +159,6 @@ export default function MyGroupsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Toaster
-        position="top-right"
-        richColors
-        visibleToasts={5}
-        expand={true}
-        gap={8}
-      />
       <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <nav className="flex items-center justify-between">
@@ -279,7 +274,6 @@ export default function MyGroupsPage() {
             </Card>
           ))}
 
-          {}
           <Card className="p-6 border-2 border-dashed border-primary/30 hover:border-primary/50 transition-colors cursor-pointer bg-card/50 flex flex-col items-center justify-center min-h-[280px]">
             <div className="flex flex-col items-center gap-4">
               <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">

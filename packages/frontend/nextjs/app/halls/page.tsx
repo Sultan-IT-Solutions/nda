@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AdminSidebar } from "@/components/admin-sidebar";
 import { AdminHeader } from "@/components/admin-header";
 import { useSidebar } from "@/hooks/use-sidebar";
@@ -54,8 +54,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { toast, Toaster } from "sonner";
-import { API, handleApiError, isAuthenticated } from "@/lib/api";
+import { toast } from "sonner";
+import { buildLoginUrl, DEFAULT_SESSION_EXPIRED_MESSAGE } from "@/lib/auth";
+import { API, AUTH_REQUIRED_MESSAGE, handleApiError } from "@/lib/api";
 
 interface Hall {
   id: number;
@@ -90,6 +91,7 @@ interface HallDetails {
 
 export default function HallsPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const { sidebarWidth } = useSidebar();
   const [halls, setHalls] = useState<Hall[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,13 +113,17 @@ export default function HallsPage() {
 
   const checkAuthAndFetchData = async () => {
     try {
-      if (!isAuthenticated()) {
-        localStorage.setItem("loginMessage", "Ваша сессия истекла, войдите в систему заново");
-        router.push("/login");
-        return;
+      let userData: any
+      try {
+        userData = await API.users.me();
+      } catch (err) {
+        const message = handleApiError(err)
+        if (message === AUTH_REQUIRED_MESSAGE) {
+          router.push(buildLoginUrl({ message: DEFAULT_SESSION_EXPIRED_MESSAGE, next: pathname }))
+          return
+        }
+        throw err
       }
-
-      const userData = await API.users.me();
       if (userData.user.role !== "admin") {
         toast.error("Доступ запрещен. Только для администраторов.");
         router.push("/");
@@ -262,14 +268,6 @@ export default function HallsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <Toaster
-        position="top-right"
-        richColors
-        visibleToasts={5}
-        expand={true}
-        gap={8}
-      />
-
       <AdminSidebar />
 
       <div className={sidebarWidth + " transition-all duration-300"}>

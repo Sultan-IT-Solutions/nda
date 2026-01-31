@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { AdminSidebar } from "@/components/admin-sidebar"
 import { AdminHeader } from "@/components/admin-header"
 import { useSidebar } from "@/hooks/use-sidebar"
@@ -16,8 +16,9 @@ import {
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Toaster, toast } from 'sonner'
-import { API, handleApiError, isAuthenticated, logout } from "@/lib/api"
+import { toast } from 'sonner'
+import { API, handleApiError, logout } from "@/lib/api"
+import { buildLoginUrl, DEFAULT_SESSION_EXPIRED_MESSAGE } from "@/lib/auth"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -61,6 +62,7 @@ interface HallAnalytics {
 
 export default function HallAnalyticsPage() {
   const router = useRouter()
+  const pathname = usePathname()
   const { sidebarWidth } = useSidebar()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -72,7 +74,7 @@ export default function HallAnalyticsPage() {
   const [peakDay, setPeakDay] = useState("")
 
   const handleLogout = () => {
-    localStorage.removeItem("token")
+    logout()
     toast.success("Вы успешно вышли из системы")
     router.push("/login")
   }
@@ -135,13 +137,17 @@ export default function HallAnalyticsPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        if (!isAuthenticated()) {
-          localStorage.setItem("loginMessage", "Ваша сессия истекла, войдите в систему заново")
-          router.push("/login")
-          return
+        let userData: any
+        try {
+          userData = await API.users.me()
+        } catch (err) {
+          const message = handleApiError(err)
+          if (message.includes('Требуется авторизация')) {
+            router.push(buildLoginUrl({ message: DEFAULT_SESSION_EXPIRED_MESSAGE, next: pathname }))
+            return
+          }
+          throw err
         }
-
-        const userData = await API.users.me()
         setUser(userData.user)
 
         if (userData.user.role !== "admin") {
@@ -241,21 +247,9 @@ export default function HallAnalyticsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Toaster
-        position="top-right"
-        richColors
-        visibleToasts={5}
-        expand={true}
-        gap={8}
-      />
-
       <AdminSidebar />
-
-      {}
       <div className={sidebarWidth + " transition-all duration-300"}>
         <AdminHeader userName={user?.name} userEmail={user?.email} />
-
-        {}
         <main className="p-8">
           <div className="mb-8 flex items-center justify-between">
             <div>
@@ -268,7 +262,6 @@ export default function HallAnalyticsPage() {
             </Button>
           </div>
 
-          {}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <Card className="border-0 shadow-sm">
               <CardContent className="p-5">
@@ -327,7 +320,6 @@ export default function HallAnalyticsPage() {
             </Card>
           </div>
 
-          {}
           <Card className="mb-6 border-0 shadow-sm">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold">Загрузка залов по дням</CardTitle>
@@ -371,14 +363,12 @@ export default function HallAnalyticsPage() {
             </CardContent>
           </Card>
 
-          {}
           <Card className="border-0 shadow-sm">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold">Визуализация загрузки</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {}
                 {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((day, dayIndex) => (
                   <div key={day} className="flex items-center gap-3">
                     <div className="w-8 text-xs font-medium text-muted-foreground">{day}</div>
@@ -415,8 +405,6 @@ export default function HallAnalyticsPage() {
                     </div>
                   </div>
                 ))}
-
-                {}
                 <div className="flex items-center justify-center gap-6 mt-6 pt-4 border-t">
                   {hallsData.map((hall, index) => (
                     <div key={`legend-${hall.id}`} className="flex items-center gap-2">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { SignOut } from "@phosphor-icons/react";
 import { NotificationBell } from "@/components/notification-bell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,8 +43,9 @@ import {
   Envelope,
   CheckCircle
 } from "@phosphor-icons/react";
-import { API, handleApiError, isAuthenticated, getUserRole, logout } from "@/lib/api";
-import { toast, Toaster } from "sonner";
+import { API, AUTH_REQUIRED_MESSAGE, handleApiError, logout } from "@/lib/api";
+import { DEFAULT_SESSION_EXPIRED_MESSAGE, buildLoginUrl } from "@/lib/auth";
+import { toast } from "sonner";
 
 interface UserData {
   id: number;
@@ -87,6 +88,7 @@ interface StudentData {
 
 export default function TrialPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [isAuth, setIsAuth] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserData | null>(null);
@@ -103,64 +105,98 @@ export default function TrialPage() {
   });
 
   useEffect(() => {
-    const checkAuth = async () => {
-      if (isAuthenticated()) {
+    const load = async () => {
+      setIsLoading(true);
+
+      try {
+        const [groupsData, userData] = await Promise.all([
+          API.groups.getAvailable(),
+          API.users.meOptional(),
+        ]);
+
+        const trialGroups = (groupsData as Group[]).filter(
+          (group) => group.is_trial === true
+        );
+        setAvailableGroups(trialGroups);
+
+        if (!userData) {
+          setIsAuth(false);
+          setUserRole(null);
+          setProfile(null);
+          setStudentData(null);
+          return;
+        }
+
+        console.log('User data:', userData);
+
+        const me = userData as { user: UserData }
+
         setIsAuth(true);
+        setUserRole(me.user.role);
 
-        try {
-          const response = await API.users.me();
-          const userData = response.user;
-          console.log('User data:', userData);
+        if (me.user.role === 'teacher') {
+          router.push('/');
+          return;
+        }
 
-          setUserRole(userData.role);
+        const userProfile = {
+          ...me.user,
+          initials: me.user.name
+            ? me.user.name
+                .split(' ')
+                .map((n: string) => n[0])
+                .join('')
+                .toUpperCase()
+            : 'U',
+        };
 
-          if (userData.role === 'teacher') {
-            router.push('/');
-            return;
-          }
+        console.log('Setting profile:', userProfile);
+        setProfile(userProfile);
 
-          const userProfile = {
-            ...userData,
-            initials: userData.name ? userData.name.split(' ').map((n: string) => n[0]).join('').toUpperCase() : 'U'
-          };
-
-          console.log('Setting profile:', userProfile);
-          setProfile(userProfile);
-
-          const allGroupsData = await API.groups.getAvailable();
-          const trialGroups = allGroupsData.filter((group: Group) => group.is_trial === true);
-          setAvailableGroups(trialGroups);
-
-          if (userData.role === 'student') {
+        if (me.user.role === 'student') {
+          try {
             const studentInfo = await API.students.me();
             console.log('Student trial info loaded:', {
               trials_used: studentInfo.trials_used,
               trials_allowed: studentInfo.trials_allowed,
-              trial_used: studentInfo.trial_used
+              trial_used: studentInfo.trial_used,
             });
             setStudentData(studentInfo);
+          } catch (err) {
+            const message = handleApiError(err);
+            if (message === AUTH_REQUIRED_MESSAGE) {
+              router.push(
+                buildLoginUrl({
+                  message: DEFAULT_SESSION_EXPIRED_MESSAGE,
+                  next: pathname,
+                })
+              );
+              return;
+            }
+            toast.error(message);
           }
-        } catch (error) {
-          console.error('Error loading data:', error);
-          toast.error("Не удалось загрузить информацию о пробных занятиях");
-          setIsAuth(false);
-          setUserRole(null);
-          setProfile(null);
         }
-      } else {
-        try {
-          const groupsData = await API.groups.getAvailable();
-          setAvailableGroups(groupsData);
-        } catch (error) {
-          console.error('Error loading groups:', error);
-          toast.error("Не удалось загрузить доступные группы");
+      } catch (err) {
+        const message = handleApiError(err);
+
+        if (message === AUTH_REQUIRED_MESSAGE) {
+          router.push(
+            buildLoginUrl({
+              message: DEFAULT_SESSION_EXPIRED_MESSAGE,
+              next: pathname,
+            })
+          );
+          return;
         }
+
+        toast.error(message || 'Не удалось загрузить доступные группы');
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
-    checkAuth();
-  }, []);
+    load();
+  }, [router, pathname]);
 
   const handleLogout = () => {
     logout();
@@ -270,14 +306,6 @@ export default function TrialPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Toaster
-        position="top-right"
-        richColors
-        visibleToasts={5}
-        expand={true}
-        gap={8}
-      />
-
       {/* Consistent Header Navigation */}
       <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
@@ -425,9 +453,6 @@ export default function TrialPage() {
                   <CardHeader>
                     <div className="flex justify-between items-start mb-2">
                       <CardTitle className="text-lg">{group.name}</CardTitle>
-                      <Badge variant="secondary">
-                        Бесплатно
-                      </Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">
                       {group.teacher_names.length > 0 ? `с ${group.teacher_names.join(', ')}` : 'Преподаватель не назначен'}

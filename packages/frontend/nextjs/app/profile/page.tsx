@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { User, SignOut } from "@phosphor-icons/react"
 import { NotificationBell } from "@/components/notification-bell"
 import { Button } from "@/components/ui/button"
@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Envelope, Phone, Calendar, TrendUp, MapPin, Clock, CheckCircle, Warning, CalendarBlank, XCircle, CaretLeft, CaretRight, CaretDown } from "@phosphor-icons/react"
-import { Toaster, toast } from 'sonner'
+import { toast } from 'sonner'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,7 +20,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { API, handleApiError, isAuthenticated, logout } from "@/lib/api"
+import { buildLoginUrl, DEFAULT_SESSION_EXPIRED_MESSAGE } from "@/lib/auth"
+import { API, AUTH_REQUIRED_MESSAGE, handleApiError, logout } from "@/lib/api"
 
 interface StudentData {
   id: number
@@ -62,8 +63,31 @@ interface GroupData {
   end_date?: string | null
 }
 
+interface TeacherGroupApi {
+  id: number
+  name: string
+  duration_minutes: number
+  capacity: number | null
+  is_closed: boolean
+  is_main?: boolean
+  category_name: string | null
+  teacher_name?: string | null
+  teacher_names?: string[]
+  is_trial: boolean
+  start_date: string | null
+  end_date: string | null
+  hall: { id: number; name: string } | null
+  hall_name?: string | null
+  enrolled?: number
+  student_count?: number
+  free_slots?: number | null
+  schedule?: string | null
+  notes?: string | null
+}
+
 export default function ProfilePage() {
   const router = useRouter()
+  const pathname = usePathname()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [user, setUser] = useState<UserData | null>(null)
@@ -89,12 +113,6 @@ export default function ProfilePage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        if (!isAuthenticated()) {
-          localStorage.setItem("loginMessage", "Ваша сессия истекла, войдите в систему заново")
-          router.push("/login")
-          return
-        }
-
         const userData = await API.users.me()
         setUser(userData.user)
 
@@ -117,18 +135,72 @@ export default function ProfilePage() {
             setAttendanceData(attendanceInfo.attendance || [])
           } catch (err) {
             }
+        } else if (userData.user.role === 'teacher') {
+          try {
+            const teacherGroupsData = await API.teachers.getMyGroups() as { groups?: TeacherGroupApi[] }
+            const normalizedGroups: GroupData[] = (teacherGroupsData.groups || []).map((group) => {
+              const enrolled =
+                typeof group.enrolled === 'number'
+                  ? group.enrolled
+                  : typeof group.student_count === 'number'
+                    ? group.student_count
+                    : 0
+
+              const freeSlots =
+                typeof group.free_slots === 'number'
+                  ? group.free_slots
+                  : typeof group.capacity === 'number'
+                    ? group.capacity - enrolled
+                    : null
+
+              const teacherDisplay =
+                Array.isArray(group.teacher_names) && group.teacher_names.length > 0
+                  ? group.teacher_names.filter(Boolean).join(", ")
+                  : (group.teacher_name ?? "Вы")
+
+              return {
+                id: group.id,
+                name: group.name,
+                capacity: typeof group.capacity === 'number' ? group.capacity : 0,
+                start_time: null,
+                duration_minutes: group.duration_minutes,
+                hall_id: group.hall?.id ?? null,
+                hall_name: group.hall_name ?? group.hall?.name ?? null,
+                teacher_name: teacherDisplay,
+                category_name: group.category_name,
+                enrolled,
+                teacher_ids: [],
+                free_slots: freeSlots,
+                recurring_days: null,
+                schedule: group.schedule ?? undefined,
+                isActive: !group.is_closed,
+                is_trial: group.is_trial,
+                start_date: group.start_date,
+                end_date: group.end_date,
+              }
+            })
+            setGroups(normalizedGroups)
+          } catch (err) {
+            // ignoring
+          }
         }
 
         setLoading(false)
       } catch (err) {
-        logout()
-        localStorage.setItem("loginMessage", "Ваша сессия истекла, войдите в систему заново")
-        router.push("/login")
+        const message = handleApiError(err)
+        if (message === AUTH_REQUIRED_MESSAGE) {
+          router.push(buildLoginUrl({ message: DEFAULT_SESSION_EXPIRED_MESSAGE, next: pathname }))
+          return
+        }
+
+        toast.error(message)
+        setError(message)
+        setLoading(false)
       }
     }
 
     fetchData()
-  }, [router])
+  }, [router, pathname])
 
   if (loading) {
     return (
@@ -161,6 +233,9 @@ export default function ProfilePage() {
     registrationDate: user?.created_at ? new Date(user.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : "Не указано",
     groupCount: groups.length
   }
+
+  const isStudent = user?.role === 'student'
+  const isTeacher = user?.role === 'teacher'
 
   const myGroups = groups.map(group => {
     let schedule = group.schedule || "Не указано";
@@ -225,7 +300,7 @@ export default function ProfilePage() {
     }
   }
 
-  const subscriptions = groups.slice(0, 3).map(group => {
+  const subscriptions = (isStudent ? groups.slice(0, 3) : []).map(group => {
 
     const groupLessons = lessonAttendance.filter(lesson => lesson.group_id === group.id)
 
@@ -315,13 +390,6 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Toaster
-        position="top-right"
-        richColors
-        visibleToasts={5}
-        expand={true}
-        gap={8}
-      />
       <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <nav className="flex items-center justify-between">
@@ -341,6 +409,13 @@ export default function ProfilePage() {
                     onClick={() => router.push("/teacher-groups")}
                   >
                     Мои группы
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="text-foreground/70 hover:text-foreground text-sm"
+                    onClick={() => router.push("/teacher-groups/calendar")}
+                  >
+                    Расписание
                   </Button>
                   <Button className="bg-[#FF6B35] hover:bg-[#FF6B35]/90 text-white text-sm rounded-lg px-6">
                     Профиль
@@ -553,7 +628,7 @@ export default function ProfilePage() {
               </div>
               <h2 className="text-base font-semibold text-foreground">Мои группы</h2>
             </div>
-            {subscriptions.length > 0 && (
+            {isStudent && subscriptions.length > 0 && (
               <div className="flex items-center gap-2">
                 <button
                   onClick={goToPrevSubscriptionPage}
@@ -577,42 +652,85 @@ export default function ProfilePage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {subscriptions.length === 0 ? (
-              <div className="col-span-3 text-center text-muted-foreground py-8">Нет активных групп</div>
+            {isTeacher ? (
+              groups.length === 0 ? (
+                <div className="col-span-3 text-center text-muted-foreground py-8">Нет активных групп</div>
+              ) : (
+                groups.map((group) => (
+                  <div key={group.id} className="bg-primary/5 rounded-xl p-5 border border-primary/10 hover:border-primary/20 transition-colors space-y-4">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h3 className="font-semibold mb-1 text-foreground">{group.name}</h3>
+                        <p className="text-sm text-muted-foreground">{group.category_name || "Без направления"}</p>
+                      </div>
+                      <Badge className="bg-success/20 text-success border-0 text-xs font-medium">
+                        {group.isActive ? (group.is_trial ? "Пробный" : "Активная") : "Закрыта"}
+                      </Badge>
+                    </div>
+
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <User size={16} className="text-primary" weight="duotone" />
+                        <span className="text-muted-foreground text-xs">Ученики:</span>
+                        <div className="font-medium text-foreground">
+                          {group.enrolled}{group.capacity ? ` / ${group.capacity}` : ""}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Calendar size={16} className="text-primary" weight="duotone" />
+                        <span className="text-muted-foreground text-xs">Расписание:</span>
+                        <div className="font-medium text-foreground">{group.schedule || "Не назначено"}</div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <MapPin size={16} className="text-primary" weight="duotone" />
+                        <span className="text-muted-foreground text-xs">Зал:</span>
+                        <div className="font-medium text-foreground">{group.hall_name || "Не указан"}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )
             ) : (
-              currentSubscriptions.map((sub) => (
-              <div key={sub.id} className="space-y-4">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h3 className="font-semibold mb-1 text-foreground">{sub.title}</h3>
-                    <p className="text-sm text-muted-foreground">{sub.category}</p>
+              subscriptions.length === 0 ? (
+                <div className="col-span-3 text-center text-muted-foreground py-8">Нет активных групп</div>
+              ) : (
+                currentSubscriptions.map((sub) => (
+                  <div key={sub.id} className="space-y-4">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h3 className="font-semibold mb-1 text-foreground">{sub.title}</h3>
+                        <p className="text-sm text-muted-foreground">{sub.category}</p>
+                      </div>
+                      <Badge className="bg-success/20 text-success border-0 text-xs font-medium">{sub.badge}</Badge>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between items-center text-sm mb-2">
+                        <span className="text-muted-foreground">Использовано</span>
+                        <span className="font-semibold text-foreground">{sub.used} из {sub.total}</span>
+                      </div>
+                      <Progress value={sub.total > 0 ? (sub.used / sub.total) * 100 : 0} className="h-2 bg-primary/10" />
+                    </div>
+
+                    <div className="bg-gradient-to-br from-purple-600 to-purple-500 text-white rounded-xl p-5 text-center shadow-lg">
+                      <div className="text-xs mb-1 opacity-90">Осталось занятий</div>
+                      <div className="text-4xl font-bold">{sub.remaining}</div>
+                    </div>
+
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <div>Начало: {sub.startDate}</div>
+                      <div>Окончание: {sub.endDate}</div>
+                    </div>
                   </div>
-                  <Badge className="bg-success/20 text-success border-0 text-xs font-medium">{sub.badge}</Badge>
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center text-sm mb-2">
-                    <span className="text-muted-foreground">Использовано</span>
-                    <span className="font-semibold text-foreground">{sub.used} из {sub.total}</span>
-                  </div>
-                  <Progress value={(sub.used / sub.total) * 100} className="h-2 bg-primary/10" />
-                </div>
-
-                <div className="bg-gradient-to-br from-purple-600 to-purple-500 text-white rounded-xl p-5 text-center shadow-lg">
-                  <div className="text-xs mb-1 opacity-90">Осталось занятий</div>
-                  <div className="text-4xl font-bold">{sub.remaining}</div>
-                </div>
-
-                <div className="text-xs text-muted-foreground space-y-1">
-                  <div>Начало: {sub.startDate}</div>
-                  <div>Окончание: {sub.endDate}</div>
-                </div>
-              </div>
-              ))
+                ))
+              )
             )}
           </div>
         </Card>
 
+        {isStudent && (
         <Card className="p-6 border-0 shadow-sm bg-card/80">
           <div className="flex items-center gap-2 mb-6">
             <div className="p-2 rounded-lg bg-primary/10">
@@ -622,7 +740,6 @@ export default function ProfilePage() {
           </div>
 
           <div className="space-y-8">
-            {}
             {attendance.length > 0 && (
               <div className="space-y-8">
                 {attendance.map((item) => (
@@ -694,7 +811,6 @@ export default function ProfilePage() {
               </div>
             )}
 
-            {}
             {lessonAttendance.length > 0 && (
               <div className="border-t border-border pt-6">
                 <div className="flex items-center justify-between mb-4">
@@ -849,6 +965,7 @@ export default function ProfilePage() {
             )}
           </div>
         </Card>
+        )}
       </main>
     </div>
   )

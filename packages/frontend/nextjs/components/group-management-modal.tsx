@@ -92,11 +92,6 @@ export default function GroupManagementModal({
   const fetchGroupData = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      if (!token) return;
-
-      const headers: HeadersInit = { 'Authorization': `Bearer ${token}` };
-
       const [studentsRes, statsRes, groupRes, lessonsRes] = await Promise.all([
         API.teachers.getGroupStudents(groupId),
         API.teachers.getGroupStats(groupId),

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { API_BASE_URL } from "@/lib/api"
+import { apiRequest } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -62,16 +62,8 @@ export default function AttendanceManager({ groupId, onSave }: AttendanceManager
 
   const fetchLessons = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/groups/${groupId}/lessons-attendance`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setLessons(data.lessons || [])
-      }
+      const data = await apiRequest(`/admin/groups/${groupId}/lessons-attendance`)
+      setLessons(data.lessons || [])
     } catch (error) {
       console.error('Error fetching lessons:', error)
     } finally {
@@ -121,27 +113,20 @@ export default function AttendanceManager({ groupId, onSave }: AttendanceManager
           status
         }))
 
-      const response = await fetch(`${API_BASE_URL}/admin/groups/${groupId}/lessons/${selectedLessonId}/attendance`, {
+      await apiRequest(`/admin/groups/${groupId}/lessons/${selectedLessonId}/attendance`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
         body: JSON.stringify({
           lesson_id: selectedLessonId,
           attendance: attendanceRecords
         })
       })
 
-      if (response.ok) {
+      await fetchLessons()
+      setSelectedLessonId(null)
+      setAttendanceData({})
 
-        await fetchLessons()
-        setSelectedLessonId(null)
-        setAttendanceData({})
-
-        if (onSave) {
-          onSave()
-        }
+      if (onSave) {
+        onSave()
       }
     } catch (error) {
       console.error('Error saving attendance:', error)
@@ -155,19 +140,11 @@ export default function AttendanceManager({ groupId, onSave }: AttendanceManager
 
     setDeleting(lessonId)
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/lessons/${lessonId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      })
-
-      if (response.ok) {
-        await fetchLessons()
-        if (selectedLessonId === lessonId) {
-          setSelectedLessonId(null)
-          setAttendanceData({})
-        }
+      await apiRequest(`/admin/lessons/${lessonId}`, { method: 'DELETE' })
+      await fetchLessons()
+      if (selectedLessonId === lessonId) {
+        setSelectedLessonId(null)
+        setAttendanceData({})
       }
     } catch (error) {
       console.error('Error deleting lesson:', error)
@@ -205,12 +182,8 @@ export default function AttendanceManager({ groupId, onSave }: AttendanceManager
 
       const startDateTime = `${editForm.date}T${editForm.start_time}:00`
 
-      const response = await fetch(`${API_BASE_URL}/admin/lessons/${lessonId}`, {
+      await apiRequest(`/admin/lessons/${lessonId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
         body: JSON.stringify({
           class_name: editForm.class_name,
           start_time: startDateTime,
@@ -218,13 +191,9 @@ export default function AttendanceManager({ groupId, onSave }: AttendanceManager
         })
       })
 
-      if (response.ok) {
-        await fetchLessons()
-        setEditing(null)
-        setEditForm({ date: '', start_time: '', end_time: '', class_name: '' })
-      } else {
-        alert('Failed to update lesson')
-      }
+      await fetchLessons()
+      setEditing(null)
+      setEditForm({ date: '', start_time: '', end_time: '', class_name: '' })
     } catch (error) {
       console.error('Error updating lesson:', error)
       alert('Error updating lesson')
@@ -274,7 +243,6 @@ export default function AttendanceManager({ groupId, onSave }: AttendanceManager
 
   return (
     <div className="space-y-6">
-      {}
       <div className="space-y-6">
         <h3 className="text-lg font-semibold">Занятия</h3>
         {lessons.map((lesson) => {
@@ -342,7 +310,6 @@ export default function AttendanceManager({ groupId, onSave }: AttendanceManager
                 </div>
               </Card>
 
-              {}
               {editing === lesson.id && (
                 <Card>
                   <CardHeader>
@@ -427,7 +394,6 @@ export default function AttendanceManager({ groupId, onSave }: AttendanceManager
                 </Card>
               )}
 
-              {}
               {selectedLessonId === lesson.id && (
                 <Card>
                   <CardHeader>

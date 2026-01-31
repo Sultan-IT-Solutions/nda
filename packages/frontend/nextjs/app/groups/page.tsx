@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Users,
   Calendar,
@@ -14,8 +14,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { toast, Toaster } from "sonner";
-import { API, handleApiError, isAuthenticated } from "@/lib/api";
+import { toast } from "sonner";
+import { API, AUTH_REQUIRED_MESSAGE, handleApiError } from "@/lib/api";
+import { DEFAULT_SESSION_EXPIRED_MESSAGE, buildLoginUrl } from "@/lib/auth";
 import CreateGroupModal from "@/components/create-group-modal";
 import { AdminSidebar } from "@/components/admin-sidebar";
 import { AdminHeader } from "@/components/admin-header";
@@ -36,6 +37,7 @@ interface Group {
 
 export default function GroupsPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const { sidebarWidth } = useSidebar();
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,11 +50,6 @@ export default function GroupsPage() {
 
   const fetchGroups = async () => {
     try {
-      if (!isAuthenticated()) {
-        router.push("/login");
-        return;
-      }
-
       const userData = await API.users.me();
       setUser(userData.user);
 
@@ -60,6 +57,13 @@ export default function GroupsPage() {
       setGroups(data.groups || []);
     } catch (error) {
       console.error("Error fetching groups:", error);
+      const message = handleApiError(error);
+      if (message === AUTH_REQUIRED_MESSAGE) {
+        router.push(
+          buildLoginUrl({ message: DEFAULT_SESSION_EXPIRED_MESSAGE, next: pathname })
+        );
+        return;
+      }
       toast.error("Не удалось загрузить группы");
     } finally {
       setLoading(false);
@@ -81,17 +85,9 @@ export default function GroupsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <Toaster
-        position="top-right"
-        richColors
-        visibleToasts={5}
-        expand={true}
-        gap={8}
-      />
-
       <AdminSidebar />
 
-      {}
+      
       <div className={sidebarWidth + " transition-all duration-300"}>
         <AdminHeader userName={user?.name} userEmail={user?.email} />
         <main className="p-8">

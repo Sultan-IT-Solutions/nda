@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { AdminSidebar } from "@/components/admin-sidebar"
 import { AdminHeader } from "@/components/admin-header"
 import { useSidebar } from "@/hooks/use-sidebar"
@@ -15,8 +15,8 @@ import {
   Tag
 } from "@phosphor-icons/react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Toaster } from 'sonner'
-import { API, handleApiError, isAuthenticated } from "@/lib/api"
+import { API, handleApiError } from "@/lib/api"
+import { buildLoginUrl, DEFAULT_SESSION_EXPIRED_MESSAGE } from "@/lib/auth"
 
 interface UserData {
   id: number
@@ -36,6 +36,7 @@ interface DashboardStats {
 
 export default function AnalyticsPage() {
   const router = useRouter()
+  const pathname = usePathname()
   const { sidebarWidth } = useSidebar()
   const [loading, setLoading] = useState(true)
   const [user, setUser] = useState<UserData | null>(null)
@@ -51,13 +52,17 @@ export default function AnalyticsPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        if (!isAuthenticated()) {
-          localStorage.setItem("loginMessage", "Ваша сессия истекла, войдите в систему заново")
-          router.push("/login")
-          return
+        let userData: any
+        try {
+          userData = await API.users.me()
+        } catch (err) {
+          const message = handleApiError(err)
+          if (message.includes('Требуется авторизация')) {
+            router.push(buildLoginUrl({ message: DEFAULT_SESSION_EXPIRED_MESSAGE, next: pathname }))
+            return
+          }
+          throw err
         }
-
-        const userData = await API.users.me()
         setUser(userData.user)
 
         if (userData.user.role !== "admin") {
@@ -115,14 +120,6 @@ export default function AnalyticsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Toaster
-        position="top-right"
-        richColors
-        visibleToasts={5}
-        expand={true}
-        gap={8}
-      />
-
       <AdminSidebar />
 
       <div className={sidebarWidth + " transition-all duration-300"}>

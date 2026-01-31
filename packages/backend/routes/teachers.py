@@ -206,14 +206,26 @@ async def get_teacher_groups(user: dict = Depends(require_teacher)):
             g.duration_minutes,
             g.capacity,
             g.is_closed,
+            g.is_trial,
+            g.start_date,
+            g.recurring_until,
             h.id AS hall_id,
             h.name AS hall_name,
+            c.name AS category_name,
+            (
+                SELECT array_remove(array_agg(DISTINCT u2.name), NULL)
+                FROM group_teachers gt2
+                LEFT JOIN teachers t2 ON t2.id = gt2.teacher_id
+                LEFT JOIN users u2 ON u2.id = t2.user_id
+                WHERE gt2.group_id = g.id
+            ) AS teacher_names,
             (SELECT COUNT(*) FROM group_students WHERE group_id = g.id) AS enrolled,
             g.notes,
             gt.is_main
         FROM groups g
         INNER JOIN group_teachers gt ON gt.group_id = g.id AND gt.teacher_id = $1
         LEFT JOIN halls h ON h.id = g.hall_id
+        LEFT JOIN categories c ON c.id = g.category_id
         ORDER BY g.is_closed ASC, g.name
         """,
         teacher_id
@@ -222,6 +234,8 @@ async def get_teacher_groups(user: dict = Depends(require_teacher)):
     for r in rows:
         enrolled = int(r["enrolled"]) if r["enrolled"] else 0
         schedule = await get_group_schedule_formatted(pool, r["id"])
+        teacher_names = r["teacher_names"] or []
+        teacher_display = ", ".join([str(t) for t in teacher_names if t]) or "Не назначен"
         groups.append({
             "id": r["id"],
             "name": r["name"],
@@ -229,8 +243,14 @@ async def get_teacher_groups(user: dict = Depends(require_teacher)):
             "capacity": r["capacity"],
             "is_closed": r["is_closed"],
             "is_main": r["is_main"],
+            "category_name": r["category_name"],
+            "is_trial": r["is_trial"],
+            "start_date": r["start_date"].strftime("%Y-%m-%d") if r["start_date"] else None,
+            "end_date": r["recurring_until"].strftime("%Y-%m-%d") if r["recurring_until"] else None,
             "hall": {"id": r["hall_id"], "name": r["hall_name"]} if r["hall_id"] else None,
             "hall_name": r["hall_name"] or "Не указан",
+            "teacher_name": teacher_display,
+            "teacher_names": [str(t) for t in teacher_names if t],
             "enrolled": enrolled,
             "student_count": enrolled,
             "free_slots": r["capacity"] - enrolled if r["capacity"] else None,
@@ -416,6 +436,175 @@ async def get_scheduled_lessons(user: dict = Depends(require_teacher)):
                 })
     scheduled_lessons.sort(key=lambda x: x["lessonDateTime"])
     return {"lessons": scheduled_lessons}
+
+
+@router.get("/schedule/weekly")
+async def get_teacher_weekly_schedule(
+    week_start: str,
+    user: dict = Depends(require_teacher),
+):
+    from datetime import datetime, timedelta
+
+    pool = await get_connection()
+    teacher_id = await resolve_teacher_id(pool, user["id"])
+    if not teacher_id:
+        raise HTTPException(status_code=404, detail="Teacher profile not found")
+
+    try:
+        week_start_date = datetime.strptime(week_start, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    week_end_date = week_start_date + timedelta(days=6)
+
+    lessons = await pool.fetch(
+        """
+        SELECT
+            l.id as lesson_id,
+            l.group_id,
+            l.class_name,
+            l.duration_minutes,
+            l.start_time,
+            l.is_cancelled,
+            l.is_rescheduled,
+            g.name as group_name,
+            h.id as hall_id,
+            h.name as hall_name
+        FROM lessons l
+        JOIN groups g ON g.id = l.group_id
+        LEFT JOIN halls h ON h.id = l.hall_id
+        WHERE DATE(l.start_time) BETWEEN $1 AND $2
+          AND (
+            l.teacher_id = $3
+            OR l.substitute_teacher_id = $3
+            OR EXISTS (
+                SELECT 1 FROM group_teachers gt
+                WHERE gt.group_id = l.group_id AND gt.teacher_id = $3
+            )
+          )
+        ORDER BY l.start_time
+        """,
+        week_start_date,
+        week_end_date,
+        teacher_id,
+    )
+
+    entries = []
+    for lesson in lessons:
+        start_datetime = lesson["start_time"]
+        if hasattr(start_datetime, 'tzinfo') and start_datetime.tzinfo is not None:
+            from datetime import timezone
+            local_tz = timezone(timedelta(hours=5))
+            start_datetime = start_datetime.astimezone(local_tz).replace(tzinfo=None)
+
+        duration = int(lesson["duration_minutes"] or 60)
+        end_datetime = start_datetime + timedelta(minutes=duration)
+
+        date = start_datetime.date()
+        day_index = date.weekday()  # Monday=0
+
+        entries.append({
+            "lessonId": lesson["lesson_id"],
+            "groupId": lesson["group_id"],
+            "groupName": lesson["group_name"],
+            "className": lesson["class_name"] or "",
+            "dayIndex": day_index,
+            "date": date.isoformat(),
+            "startTime": start_datetime.strftime("%H:%M"),
+            "endTime": end_datetime.strftime("%H:%M"),
+            "duration": duration,
+            "hallId": lesson["hall_id"],
+            "hallName": lesson["hall_name"] or "Не назначен",
+            "isCancelled": bool(lesson["is_cancelled"]),
+            "isRescheduled": bool(lesson["is_rescheduled"]),
+            "status": "Отменён" if lesson["is_cancelled"] else ("Перенесён" if lesson["is_rescheduled"] else None),
+        })
+
+    entries.sort(key=lambda x: (x["dayIndex"], x["startTime"]))
+
+    return {
+        "weekStart": week_start,
+        "weekEnd": week_end_date.isoformat(),
+        "entries": entries,
+    }
+
+
+@router.get("/halls/occupancy/weekly")
+async def get_halls_occupancy_weekly(
+    week_start: str,
+    user: dict = Depends(require_teacher),
+):
+    from datetime import datetime, timedelta
+
+    pool = await get_connection()
+    try:
+        week_start_date = datetime.strptime(week_start, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    week_end_date = week_start_date + timedelta(days=6)
+
+    lesson_rows = await pool.fetch(
+        """
+        SELECT
+            l.hall_id,
+            h.name as hall_name,
+            l.start_time,
+            l.duration_minutes,
+            l.is_cancelled
+        FROM lessons l
+        JOIN halls h ON h.id = l.hall_id
+        WHERE l.hall_id IS NOT NULL
+          AND DATE(l.start_time) BETWEEN $1 AND $2
+          AND (l.is_cancelled IS NULL OR l.is_cancelled = FALSE)
+        ORDER BY h.name, l.start_time
+        """,
+        week_start_date,
+        week_end_date,
+    )
+
+    hours = list(range(8, 22))  # 8..21
+    halls: dict[int, dict] = {}
+
+    def overlaps(slot_start: datetime, slot_end: datetime, lesson_start: datetime, lesson_end: datetime) -> bool:
+        return lesson_start < slot_end and lesson_end > slot_start
+
+    for row in lesson_rows:
+        hall_id = int(row["hall_id"])
+        hall_name = row["hall_name"]
+
+        if hall_id not in halls:
+            halls[hall_id] = {
+                "id": hall_id,
+                "name": hall_name,
+                "occupied": [[False for _ in hours] for _ in range(7)],
+            }
+
+        start_datetime = row["start_time"]
+        if hasattr(start_datetime, 'tzinfo') and start_datetime.tzinfo is not None:
+            from datetime import timezone
+            local_tz = timezone(timedelta(hours=5))
+            start_datetime = start_datetime.astimezone(local_tz).replace(tzinfo=None)
+
+        duration = int(row["duration_minutes"] or 60)
+        end_datetime = start_datetime + timedelta(minutes=duration)
+
+        day_index = start_datetime.date().weekday()
+        if day_index < 0 or day_index > 6:
+            continue
+
+        for hour_idx, hour in enumerate(hours):
+            slot_start = datetime.combine(start_datetime.date(), time(hour=hour, minute=0))
+            slot_end = slot_start + timedelta(hours=1)
+            if overlaps(slot_start, slot_end, start_datetime, end_datetime):
+                halls[hall_id]["occupied"][day_index][hour_idx] = True
+
+    return {
+        "weekStart": week_start,
+        "weekEnd": week_end_date.isoformat(),
+        "hours": hours,
+        "halls": sorted(halls.values(), key=lambda h: h["name"]),
+    }
 @router.post("/groups/{group_id}/attendance")
 async def save_lesson_attendance(group_id: int, data: SaveLessonAttendanceRequest, user: dict = Depends(require_teacher)):
     pool = await get_connection()

@@ -125,7 +125,13 @@ async def get_my_groups(user: dict = Depends(require_student)):
             g.start_date,
             g.recurring_until,
             h.name AS hall_name,
-            u.name AS teacher_name,
+            (
+                SELECT array_remove(array_agg(DISTINCT u2.name), NULL)
+                FROM group_teachers gt2
+                LEFT JOIN teachers t2 ON t2.id = gt2.teacher_id
+                LEFT JOIN users u2 ON u2.id = t2.user_id
+                WHERE gt2.group_id = g.id
+            ) AS teacher_names,
             c.name AS category_name,
             g.capacity,
             (SELECT COUNT(*) FROM group_students WHERE group_id = g.id) AS enrolled
@@ -133,9 +139,6 @@ async def get_my_groups(user: dict = Depends(require_student)):
         JOIN groups g ON g.id = gs.group_id
         LEFT JOIN halls h ON h.id = g.hall_id
         LEFT JOIN categories c ON c.id = g.category_id
-        LEFT JOIN group_teachers gt ON gt.group_id = g.id AND gt.is_main = TRUE
-        LEFT JOIN teachers t ON t.id = gt.teacher_id
-        LEFT JOIN users u ON u.id = t.user_id
         WHERE gs.student_id = $1
         ORDER BY g.name
         """,
@@ -146,12 +149,14 @@ async def get_my_groups(user: dict = Depends(require_student)):
         enrolled = int(r["enrolled"]) if r["enrolled"] else 0
         capacity = r["capacity"]
         schedule = await get_group_schedule_formatted(pool, r["id"])
+        teacher_names = r["teacher_names"] or []
+        teacher_display = ", ".join([str(t) for t in teacher_names if t]) or "Не назначен"
         groups.append({
             "id": r["id"],
             "name": r["name"],
             "duration_minutes": r["duration_minutes"],
             "hall_name": r["hall_name"] or "Не указан",
-            "teacher_name": r["teacher_name"] or "Не назначен",
+            "teacher_name": teacher_display,
             "category_name": r["category_name"],
             "capacity": capacity,
             "enrolled": enrolled,
@@ -314,7 +319,7 @@ async def get_notifications(user: dict = Depends(require_student)):
             "title": r["title"],
             "message": r["message"],
             "is_read": r["is_read"],
-            "created_at": str(r["created_at"]) if r["created_at"] else None
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None
         }
         for r in rows
     ]

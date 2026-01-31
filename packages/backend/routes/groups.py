@@ -274,7 +274,7 @@ async def trial_lesson(group_id: int, user: dict = Depends(require_auth)):
                 group_id, student_id
             )
             if existing:
-                raise HTTPException(status_code=409, detail="Already registered for this group")
+                raise HTTPException(status_code=409, detail="Вы уже записаны в эту группу")
             await conn.execute(
                 """
                 INSERT INTO group_students (group_id, student_id, is_trial)

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { AdminSidebar } from "@/components/admin-sidebar"
 import { AdminHeader } from "@/components/admin-header"
 import { useSidebar } from "@/hooks/use-sidebar"
@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Toaster, toast } from 'sonner'
+import { toast } from 'sonner'
 import {
   Dialog,
   DialogContent,
@@ -43,7 +43,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { API, isAuthenticated, logout } from "@/lib/api"
+import { API, AUTH_REQUIRED_MESSAGE, logout } from "@/lib/api"
+import { DEFAULT_SESSION_EXPIRED_MESSAGE, buildLoginUrl } from "@/lib/auth"
 
 interface Category {
   id: number
@@ -60,6 +61,7 @@ const colorPresets = [
 
 export default function CategoriesPage() {
   const router = useRouter()
+  const pathname = usePathname()
   const { sidebarWidth } = useSidebar()
   const [loading, setLoading] = useState(true)
   const [categories, setCategories] = useState<Category[]>([])
@@ -86,17 +88,19 @@ export default function CategoriesPage() {
 
   const fetchCategories = async () => {
     try {
-      console.log("[v0] Fetching categories, token exists:", !!localStorage.getItem('token'))
       const response = await API.categories.getAll()
-      console.log("[v0] Categories response:", response)
       setCategories(response || [])
-    } catch (err: any) {
-      console.error("[v0] Error fetching categories:", err)
-      // If session expired, redirect to login
-      if (err.message?.includes('Сессия истекла')) {
-        router.push('/login')
+    } catch (err) {
+      console.error("Error fetching categories:", err)
+
+      const message = err instanceof Error ? err.message : ""
+      if (message === AUTH_REQUIRED_MESSAGE) {
+        router.push(
+          buildLoginUrl({ message: DEFAULT_SESSION_EXPIRED_MESSAGE, next: pathname })
+        )
         return
       }
+
       toast.error("Ошибка при загрузке категорий")
     }
   }
@@ -175,11 +179,6 @@ export default function CategoriesPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        if (!isAuthenticated()) {
-          router.push("/login")
-          return
-        }
-
         const userData = await API.users.me()
         if (userData.user.role !== 'admin') {
           router.push("/")
@@ -191,6 +190,13 @@ export default function CategoriesPage() {
         setLoading(false)
       } catch (err) {
         console.error("Auth error:", err)
+        const message = err instanceof Error ? err.message : ""
+        if (message === AUTH_REQUIRED_MESSAGE) {
+          router.push(
+            buildLoginUrl({ message: DEFAULT_SESSION_EXPIRED_MESSAGE, next: pathname })
+          )
+          return
+        }
         logout()
         router.push("/login")
       }
@@ -218,14 +224,6 @@ export default function CategoriesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Toaster
-        position="top-right"
-        richColors
-        visibleToasts={5}
-        expand={true}
-        gap={8}
-      />
-
       <AdminSidebar />
 
       <div className={sidebarWidth + " transition-all duration-300"}>
@@ -297,7 +295,6 @@ export default function CategoriesPage() {
                 </Dialog>
           </div>
 
-          {}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {categories.length === 0 ? (
               <div className="col-span-full">
@@ -375,7 +372,6 @@ export default function CategoriesPage() {
         </main>
       </div>
 
-      {}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
         <DialogContent>
           <DialogHeader>

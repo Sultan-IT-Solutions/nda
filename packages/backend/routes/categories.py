@@ -19,6 +19,7 @@ class CategoryResponse(BaseModel):
     description: Optional[str]
     color: str
     created_at: str
+@router.get("", response_model=List[CategoryResponse], include_in_schema=False)
 @router.get("/", response_model=List[CategoryResponse])
 async def get_categories(
     pool: asyncpg.Pool = Depends(get_connection),
@@ -48,6 +49,7 @@ async def get_categories(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch categories"
         )
+@router.post("", response_model=CategoryResponse, include_in_schema=False)
 @router.post("/", response_model=CategoryResponse)
 async def create_category(
     category: CategoryCreate,

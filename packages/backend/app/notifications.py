@@ -1,8 +1,17 @@
-"""
-Notification utility module for sending notifications to users.
-"""
+from datetime import datetime, timezone
 from typing import Optional, List
 from app.database import get_connection
+
+
+def _to_iso_utc(value: object) -> Optional[str]:
+    if value is None:
+        return None
+    if not isinstance(value, datetime):
+        return str(value)
+    dt = value
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat()
 class NotificationType:
     RESCHEDULE_REQUEST_SUBMITTED = "reschedule_request_submitted"
     RESCHEDULE_REQUEST_APPROVED = "reschedule_request_approved"
@@ -215,7 +224,7 @@ async def get_user_notifications(
             "action_url": r["action_url"],
             "related_id": r["related_id"],
             "related_type": r["related_type"],
-            "created_at": str(r["created_at"]) if r["created_at"] else None
+            "created_at": _to_iso_utc(r["created_at"])
         }
         for r in rows
     ]

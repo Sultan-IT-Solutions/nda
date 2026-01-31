@@ -36,14 +36,7 @@ def _get_cors_origins():
     try:
         settings = get_settings()
         origins = getattr(settings, "cors_origins_list", None)
-        if origins:
-            # Check if any origin contains wildcard pattern
-            has_wildcard = any("*" in origin for origin in origins)
-            if has_wildcard:
-                # If wildcards are used, allow all origins (CORS middleware doesn't support glob patterns)
-                return ["*"]
-            return origins
-        return ["*"]
+        return origins if origins else ["*"]
     except Exception:
         traceback.print_exc()
         return ["*"]
@@ -68,13 +61,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_get_cors_origins(),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if get_settings is not None:
+    try:
+        settings = get_settings()
+        if getattr(settings, "ENABLE_CORS", True):
+            app.add_middleware(
+                CORSMiddleware,
+                allow_origins=_get_cors_origins(),
+                allow_credentials=True,
+                allow_methods=["*"],
+                allow_headers=["*"],
+            )
+    except Exception:
+        traceback.print_exc()
 
 @app.get("/")
 async def root():

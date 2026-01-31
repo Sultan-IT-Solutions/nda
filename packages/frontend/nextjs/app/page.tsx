@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { getUserRole, logout, isAuthenticated } from '@/lib/api';
+import { API, logout } from '@/lib/api';
 
 export default function Home() {
   const router = useRouter();
@@ -12,10 +12,15 @@ export default function Home() {
   const [userRole, setUserRole] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isAuthenticated()) {
-      setIsAuth(true);
-      setUserRole(getUserRole());
-    }
+    const load = async () => {
+      const me = await API.users.meOptional();
+      if (me?.user?.role) {
+        setIsAuth(true);
+        setUserRole(me.user.role);
+      }
+    };
+
+    load();
   }, []);
 
   const handleLogout = () => {

@@ -2,7 +2,97 @@ const API_URL = '/api'
 
 export const API_BASE_URL = '/api'
 
-let isHandling401 = false;
+export const AUTH_REQUIRED_MESSAGE = 'Требуется авторизация. Войдите снова.'
+const AUTH_REQUIRED_EVENT = 'nda:auth-required'
+
+let accessToken: string | null = null
+let refreshPromise: Promise<string | null> | null = null
+
+export function setAccessToken(token: string | null) {
+  accessToken = token
+}
+
+export function getAccessToken(): string | null {
+  return accessToken
+}
+
+function emitAuthRequired(message: string) {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT, { detail: { message } }))
+}
+
+function parseFastApiValidation(detail: unknown): { message: string; errors?: Record<string, string> } | null {
+  if (!Array.isArray(detail)) return null
+
+  const errors: Record<string, string> = {}
+
+  for (const item of detail) {
+    const loc = Array.isArray((item as any)?.loc) ? ((item as any).loc as any[]) : []
+    const field = typeof loc.at(-1) === 'string' ? (loc.at(-1) as string) : 'general'
+    const msg = typeof (item as any)?.msg === 'string' ? ((item as any).msg as string) : 'Ошибка валидации'
+    const type = typeof (item as any)?.type === 'string' ? ((item as any).type as string) : ''
+
+    let friendly = msg
+
+    if (field === 'email') {
+      if (type.includes('missing') || msg.toLowerCase().includes('field required')) {
+        friendly = 'Email обязателен'
+      } else if (msg.toLowerCase().includes('valid email')) {
+        friendly = 'Введите корректный email'
+      }
+    }
+
+    if (field === 'password') {
+      if (type.includes('missing') || msg.toLowerCase().includes('field required')) {
+        friendly = 'Пароль обязателен'
+      }
+    }
+
+    if (field === 'full_name') {
+      if (type.includes('missing') || msg.toLowerCase().includes('field required')) {
+        friendly = 'Имя обязательно'
+      }
+    }
+
+    if (field === 'password_confirm') {
+      if (type.includes('missing') || msg.toLowerCase().includes('field required')) {
+        friendly = 'Подтверждение пароля обязательно'
+      }
+    }
+
+    if (!errors[field]) errors[field] = friendly
+  }
+
+  const first = Object.values(errors).find((v) => typeof v === 'string')
+  return {
+    message: first ?? 'Ошибка валидации. Проверьте правильность заполнения полей',
+    errors,
+  }
+}
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise
+
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      })
+
+      if (!res.ok) return null
+      const data = (await res.json()) as { access_token?: string }
+      const token = data?.access_token ?? null
+      setAccessToken(token)
+      return token
+    } finally {
+      refreshPromise = null
+    }
+  })()
+
+  return refreshPromise
+}
 
 export async function api(path: string, options?: RequestInit) {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
@@ -12,19 +102,16 @@ export async function api(path: string, options?: RequestInit) {
       ...getAuthHeaders(),
       ...options?.headers,
     },
+    credentials: 'include',
   })
 }
 
 export function getAuthHeaders(): HeadersInit {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  const token = getAccessToken();
   return {
     'Content-Type': 'application/json',
     ...(token && { Authorization: `Bearer ${token}` }),
   };
-}
-
-export function reset401Handler(): void {
-  isHandling401 = false;
 }
 
 export async function apiRequest<T = any>(
@@ -32,37 +119,55 @@ export async function apiRequest<T = any>(
   options: RequestInit = {}
 ): Promise<T> {
   const url = `/api${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
-  const headers = {
-    ...getAuthHeaders(),
-    ...options.headers,
-  };
-  
-  console.log("[v0] API Request:", url, "Token present:", !!headers.Authorization);
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  const doFetch = async () => {
+    return fetch(url, {
+      ...options,
+      headers: {
+        ...getAuthHeaders(),
+        ...options.headers,
+      },
+      credentials: 'include',
+    })
+  }
+
+  let response = await doFetch();
+
+  const isLoginEndpoint = endpoint.startsWith('/auth/login') || endpoint === 'auth/login'
+  if (response.status === 401 && !isLoginEndpoint) {
+    const newToken = await refreshAccessToken()
+    if (newToken) {
+      response = await doFetch()
+    }
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Request failed' }));
-    let errorMessage = error.detail || error.error || 'Request failed';
+
+    const detail = (error as any)?.detail
+    const validation = response.status === 422 ? parseFastApiValidation(detail) : null
+    const detailErrors =
+      detail && typeof detail === 'object' && !Array.isArray(detail)
+        ? (detail as any).errors
+        : undefined
+
+    let errorMessage: string = 'Request failed'
+    if (validation?.message) {
+      errorMessage = validation.message
+    } else if (typeof detail === 'string') {
+      errorMessage = detail
+    } else if (typeof (error as any)?.error === 'string') {
+      errorMessage = (error as any).error
+    } else if (detailErrors && typeof detailErrors === 'object') {
+      const first = Object.values(detailErrors).find((v) => typeof v === 'string') as
+        | string
+        | undefined
+      errorMessage = first ?? 'Ошибка в данных. Проверьте введенную информацию'
+    }
 
     if (response.status === 401) {
-      const isLoginRequest = endpoint.includes('/auth/login');
-      if (isLoginRequest) {
-        errorMessage = 'Неверный email или пароль';
-      } else {
-        if (!isHandling401) {
-          isHandling401 = true;
-          errorMessage = 'Сессия истекла. Пожалуйста, войдите снова';
-          if (typeof window !== 'undefined') {
-            localStorage.removeItem('token');
-          }
-        } else {
-          throw new Error('Session expired');
-        }
-      }
+      errorMessage = isLoginEndpoint ? 'Неверный email или пароль' : AUTH_REQUIRED_MESSAGE;
+      if (!isLoginEndpoint) emitAuthRequired(errorMessage)
     } else if (response.status === 400) {
       if (errorMessage.includes('пересекается')) {
       } else if (errorMessage.includes('email') && errorMessage.includes('пароль')) {
@@ -73,15 +178,77 @@ export async function apiRequest<T = any>(
         errorMessage = 'Ошибка в данных. Проверьте введенную информацию';
       }
     } else if (response.status === 422) {
-      errorMessage = 'Ошибка валидации. Проверьте правильность заполнения полей';
+      // ignoring
+      errorMessage = validation?.message ?? 'Ошибка валидации. Проверьте правильность заполнения полей';
     } else if (response.status === 500) {
       errorMessage = 'Ошибка сервера. Попробуйте позже';
     }
 
-    throw new Error(errorMessage);
+    const err: any = new Error(errorMessage)
+    if (validation?.errors) {
+      err.errors = validation.errors
+    }
+    if (detailErrors && typeof detailErrors === 'object') {
+      err.errors = detailErrors
+    }
+    err.status = response.status
+    throw err;
   }
 
   return response.json();
+}
+
+async function apiRequestOptionalAuth<T = any>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T | null> {
+  const url = `/api${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
+
+  const doFetch = async () => {
+    return fetch(url, {
+      ...options,
+      headers: {
+        ...getAuthHeaders(),
+        ...options.headers,
+      },
+      credentials: 'include',
+    })
+  }
+
+  let response = await doFetch()
+
+  if (response.status === 401) {
+    const newToken = await refreshAccessToken()
+    if (newToken) {
+      response = await doFetch()
+    }
+  }
+
+  if (response.status === 401) return null
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Request failed' }))
+    let errorMessage = error.detail || error.error || 'Request failed'
+
+    if (response.status === 400) {
+      if (errorMessage.includes('пересекается')) {
+      } else if (errorMessage.includes('email') && errorMessage.includes('пароль')) {
+        errorMessage = 'Пожалуйста, заполните все поля'
+      } else if (errorMessage.includes('overlap') || errorMessage.includes('занятия')) {
+        errorMessage = 'Время занятия пересекается с уже существующим занятием. Выберите другое время.'
+      } else {
+        errorMessage = 'Ошибка в данных. Проверьте введенную информацию'
+      }
+    } else if (response.status === 422) {
+      errorMessage = 'Ошибка валидации. Проверьте правильность заполнения полей'
+    } else if (response.status === 500) {
+      errorMessage = 'Ошибка сервера. Попробуйте позже'
+    }
+
+    throw new Error(errorMessage)
+  }
+
+  return response.json()
 }
 
 export const API = {
@@ -90,6 +257,10 @@ export const API = {
       apiRequest('/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password }),
+      }).then((data: any) => {
+        const token = data?.access_token ?? data?.token ?? null
+        if (token) setAccessToken(token)
+        return data
       }),
     register: (data: {
       full_name: string;
@@ -106,6 +277,7 @@ export const API = {
 
   users: {
     me: () => apiRequest('/users/me'),
+    meOptional: () => apiRequestOptionalAuth('/users/me'),
     getById: (id: number) => apiRequest(`/users/${id}`),
     getAll: () => apiRequest('/admin/users'),
     update: (userId: number, data: { name?: string; email?: string; phone?: string; role?: string }) =>
@@ -170,6 +342,8 @@ export const API = {
     getGroups: (teacherId: number) => apiRequest(`/admin/teachers/${teacherId}/groups`),
     getMyGroups: () => apiRequest('/teachers/groups'),
     getScheduledLessons: () => apiRequest('/teachers/scheduled-lessons'),
+    getWeeklySchedule: (weekStart: string) => apiRequest(`/teachers/schedule/weekly?week_start=${weekStart}`),
+    getHallsOccupancyWeekly: (weekStart: string) => apiRequest(`/teachers/halls/occupancy/weekly?week_start=${weekStart}`),
     saveAttendance: (groupId: number, data: {
       lesson_date: string;
       attendance_records: Array<{ student_id: number; status: string }>;
@@ -381,25 +555,26 @@ export function handleApiError(error: any): string {
 
 export function isAuthenticated(): boolean {
   if (typeof window === 'undefined') return false;
-  return !!localStorage.getItem('token');
+  return !!getAccessToken();
 }
 
 export function getUserRole(): string | null {
   if (typeof window === 'undefined') return null;
-  const token = localStorage.getItem('token');
-  if (!token) return null;
-
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.role || null;
-  } catch {
-    return null;
+  const token = getAccessToken();
+  if (token) {
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return payload.role || null;
+    } catch {
+      // ignoring
+    }
   }
+  return null;
 }
 
 export function logout(): void {
   if (typeof window !== 'undefined') {
-    localStorage.removeItem('token');
-    isHandling401 = false;
+    setAccessToken(null)
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
   }
 }

@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Bell, Check, Trash, Calendar, CheckCircle, XCircle, Users, Lightning, Clock } from "@phosphor-icons/react"
+import { Bell, Check, Trash, Calendar, CheckCircle, XCircle, Users, Lightning, Clock, List } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
@@ -22,7 +22,8 @@ import {
 } from "@/components/ui/sheet"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { toast } from 'sonner'
-import { API } from "@/lib/api"
+import { API, logout } from "@/lib/api"
+import { adminNavItems } from "@/components/admin-nav"
 
 interface Notification {
   id: number
@@ -44,7 +45,8 @@ export function AdminHeader({ userName, userEmail }: AdminHeaderProps) {
   const router = useRouter()
   const [unreadCount, setUnreadCount] = useState(0)
   const [notifications, setNotifications] = useState<Notification[]>([])
-  const [isOpen, setIsOpen] = useState(false)
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
 
   const fetchNotifications = async () => {
@@ -75,10 +77,10 @@ export function AdminHeader({ userName, userEmail }: AdminHeaderProps) {
   }, [])
 
   useEffect(() => {
-    if (isOpen) {
+    if (isNotificationsOpen) {
       fetchNotifications()
     }
-  }, [isOpen])
+  }, [isNotificationsOpen])
 
   const markAsRead = async (notificationId: number) => {
     try {
@@ -120,7 +122,7 @@ export function AdminHeader({ userName, userEmail }: AdminHeaderProps) {
       markAsRead(notification.id)
     }
     if (notification.action_url) {
-      setIsOpen(false)
+      setIsNotificationsOpen(false)
       router.push(notification.action_url)
     }
   }
@@ -176,31 +178,121 @@ export function AdminHeader({ userName, userEmail }: AdminHeaderProps) {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem("token")
+    logout()
     toast.success("Вы успешно вышли из системы")
     router.push("/login")
   }
 
+  const mobileNavItems = useMemo(() => adminNavItems, [])
+
+  const goTo = (path: string) => {
+    setIsMobileNavOpen(false)
+    router.push(path)
+  }
+
   return (
     <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-40">
-      <div className="px-8 py-4">
-        <div className="flex items-center justify-end gap-4">
-          <Sheet open={isOpen} onOpenChange={setIsOpen}>
-            <SheetTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="relative"
-              >
-                <Bell size={20} />
-                {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-medium">
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </span>
-                )}
-              </Button>
-            </SheetTrigger>
-            <SheetContent className="w-[400px] sm:w-[450px] p-0">
+      <div className="px-4 sm:px-8 py-4">
+        <div className="flex items-center justify-between gap-4">
+          {/* Mobile: hamburger -> sidebar */}
+          <div className="flex items-center gap-2 md:hidden">
+            <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="relative">
+                  <List size={22} />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-[320px] p-0">
+                <SheetHeader className="px-5 py-4 border-b">
+                  <SheetTitle className="text-base font-semibold">Nomad Dance Academy</SheetTitle>
+                  <div className="text-xs text-muted-foreground">Админ панель</div>
+                </SheetHeader>
+
+                <ScrollArea className="h-[calc(100vh-160px)]">
+                  <div className="p-3">
+                    <div className="space-y-1">
+                      {mobileNavItems.map((item) => {
+                        const Icon = item.icon
+                        return (
+                          <Button
+                            key={item.path}
+                            variant="ghost"
+                            className="w-full justify-start text-sm text-foreground hover:bg-muted"
+                            onClick={() => goTo(item.path)}
+                          >
+                            <Icon size={18} className="mr-3" />
+                            <span className="truncate">{item.label}</span>
+                          </Button>
+                        )
+                      })}
+                    </div>
+
+                    <div className="my-3 h-px bg-border" />
+
+                    <div className="space-y-1">
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start text-sm hover:bg-muted"
+                        onClick={() => {
+                          setIsMobileNavOpen(false)
+                          setIsNotificationsOpen(true)
+                        }}
+                      >
+                        <Bell size={18} className="mr-3" />
+                        <span className="flex-1 text-left">Уведомления</span>
+                        {unreadCount > 0 && (
+                          <span className="min-w-5 h-5 px-1 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-medium">
+                            {unreadCount > 99 ? '99+' : unreadCount}
+                          </span>
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start text-sm hover:bg-muted"
+                        onClick={handleLogout}
+                      >
+                        <span className="mr-3 text-destructive">⎋</span>
+                        <span className="text-destructive">Выйти</span>
+                      </Button>
+                    </div>
+                  </div>
+                </ScrollArea>
+
+                <div className="px-5 py-4 border-t">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-9 w-9">
+                      <AvatarFallback className="bg-gradient-to-br from-purple-500 to-pink-500 text-white text-xs font-semibold">
+                        {profile.initials}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">{profile.name}</div>
+                      <div className="text-xs text-muted-foreground truncate">{profile.email}</div>
+                    </div>
+                  </div>
+                </div>
+              </SheetContent>
+            </Sheet>
+          </div>
+
+          {/* Desktop actions */}
+          <div className="hidden md:flex items-center gap-4 ml-auto">
+            <Sheet open={isNotificationsOpen} onOpenChange={setIsNotificationsOpen}>
+              <SheetTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="relative"
+                >
+                  <Bell size={20} />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-medium">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
+                </Button>
+              </SheetTrigger>
+              <SheetContent className="w-[400px] sm:w-[450px] p-0">
               <SheetHeader className="px-6 py-4 border-b">
                 <div className="flex items-center justify-between">
                   <SheetTitle className="text-lg font-semibold">Уведомления</SheetTitle>
@@ -313,6 +405,7 @@ export function AdminHeader({ userName, userEmail }: AdminHeaderProps) {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
         </div>
       </div>
     </header>

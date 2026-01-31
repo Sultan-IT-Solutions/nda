@@ -5,6 +5,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Gift, Users, Clock, Eye, EyeOff } from "lucide-react"
+import { toast } from "sonner"
 import { API, handleApiError } from '@/lib/api'
 
 export default function RegisterPage() {
@@ -49,10 +50,21 @@ export default function RegisterPage() {
         phone: formData.phone
       })
 
+      toast.success("Регистрация успешна!")
       router.push("/login")
     } catch (err) {
-      const errorMessage = handleApiError(err)
-      setFieldErrors({ general: errorMessage })
+      const anyErr = err as any
+      if (anyErr?.errors && typeof anyErr.errors === 'object') {
+        setFieldErrors(anyErr.errors)
+        const first = Object.values(anyErr.errors).find((v) => typeof v === 'string') as
+          | string
+          | undefined
+        if (first) toast.error(first)
+      } else {
+        const errorMessage = handleApiError(err)
+        setFieldErrors({ general: errorMessage })
+        toast.error(errorMessage)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -60,7 +72,6 @@ export default function RegisterPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-100 to-white flex flex-col lg:flex-row">
-      {}
       <div className="lg:hidden bg-gradient-to-b from-purple-50 to-white px-6 py-8 space-y-6">
         <div className="text-center">
           <div className="text-purple-600 text-sm font-medium mb-3">⭐ Танцевальная школа</div>
@@ -68,7 +79,6 @@ export default function RegisterPage() {
           <p className="text-gray-600 text-sm">Присоединяйся к нашей дружной команде и открой для себя мир танца</p>
         </div>
 
-        {}
         <div className="flex gap-4 justify-center">
           <div className="flex flex-col items-center">
             <div className="w-12 h-12 bg-gradient-to-br from-purple-400 to-purple-600 rounded-full flex items-center justify-center text-white mb-2">
@@ -95,7 +105,7 @@ export default function RegisterPage() {
         </button>
       </div>
 
-      {}
+
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-purple-50 via-purple-50 to-white px-12 py-16 flex-col justify-center">
         <div className="space-y-8">
           <div>
@@ -106,7 +116,7 @@ export default function RegisterPage() {
             </p>
           </div>
 
-          {}
+
           <div className="space-y-4">
             <div className="flex gap-4">
               <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-purple-400 to-purple-600 rounded-full flex items-center justify-center">
@@ -145,20 +155,17 @@ export default function RegisterPage() {
         </div>
       </div>
 
-      {}
       <div className="flex-1 flex items-center justify-center px-6 py-8 lg:py-16">
         <div className="w-full max-w-md">
           <div className="bg-white rounded-3xl shadow-2xl p-8 space-y-6">
-            {}
             <div className="text-center">
               <div className="text-4xl mb-3">🎓</div>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">Регистрация ученика</h2>
               <p className="text-sm text-gray-600">Создайте аккаунт и запишитесь на пробное занятие прямо сейчас!</p>
             </div>
 
-            {}
+
             <form onSubmit={handleSubmit} className="space-y-5">
-              {}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Имя</label>
                 <input
@@ -174,7 +181,6 @@ export default function RegisterPage() {
                 {fieldErrors.full_name && <p className="text-red-600 text-xs mt-1">✕ {fieldErrors.full_name}</p>}
               </div>
 
-              {}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
                 <input
@@ -190,7 +196,7 @@ export default function RegisterPage() {
                 {fieldErrors.email && <p className="text-red-600 text-xs mt-1">✕ {fieldErrors.email}</p>}
               </div>
 
-              {}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Телефон</label>
                 <div className="flex gap-2">
@@ -212,7 +218,6 @@ export default function RegisterPage() {
                 {fieldErrors.phone && <p className="text-red-600 text-xs mt-1">✕ {fieldErrors.phone}</p>}
               </div>
 
-              {}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Пароль</label>
                 <div className="relative">
@@ -240,7 +245,6 @@ export default function RegisterPage() {
                 {fieldErrors.password && <p className="text-red-600 text-xs mt-1">✕ {fieldErrors.password}</p>}
               </div>
 
-              {}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Подтвердите пароль</label>
                 <div className="relative">
@@ -270,7 +274,6 @@ export default function RegisterPage() {
                 )}
               </div>
 
-              {}
               <button
                 type="submit"
                 disabled={isLoading}
@@ -280,7 +283,6 @@ export default function RegisterPage() {
               </button>
             </form>
 
-            {}
             <p className="text-center text-sm text-gray-600">
               Уже есть аккаунт?{" "}
               <Link href="/login" className="text-purple-600 hover:text-purple-700 font-semibold">
