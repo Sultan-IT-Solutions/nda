@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { Users, Clock, MapPin, Plus, Loader } from "lucide-react"
+import { Users, Clock, MapPin, Plus, Loader, Menu } from "lucide-react"
 import { SignOut, User } from "@phosphor-icons/react"
 import RescheduleLessonModal from "@/components/reschedule-lesson-modal"
 import CreateGroupModal from "@/components/create-group-modal"
@@ -17,6 +17,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
 import { toast } from 'sonner'
 import { formatTimeWithGMT5, formatDateWithGMT5 } from "@/lib/utils"
 import { buildLoginUrl, DEFAULT_SESSION_EXPIRED_MESSAGE } from "@/lib/auth"
@@ -54,6 +61,7 @@ export default function TeacherGroupsPage() {
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false)
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false)
   const [selectedLesson, setSelectedLesson] = useState<any>(null)
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
 
   useEffect(() => {
     const checkRoleAndFetch = async () => {
@@ -177,12 +185,66 @@ export default function TeacherGroupsPage() {
     return `${baseClass} ${isSelected ? 'ring-2 ring-offset-1' : 'hover:scale-105'} transition-all`
   }
 
+  const mobileNavItems = (() => {
+    if (user?.role === 'teacher') {
+      return [
+        { label: 'Главная', path: '/' },
+        { label: 'Мои группы', path: '/teacher-groups' },
+        { label: 'Расписание', path: '/teacher-groups/calendar' },
+        { label: 'Профиль', path: '/profile' },
+      ]
+    }
+
+    return [
+      { label: 'Главная', path: '/' },
+      { label: 'Расписание групп', path: '/schedule' },
+      { label: 'Мои группы', path: '/teacher-groups' },
+      { label: 'Пробный урок', path: '/trial' },
+      { label: 'Профиль', path: '/profile' },
+    ]
+  })()
+
+  const goTo = (path: string) => {
+    setIsMobileNavOpen(false)
+    router.push(path)
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <nav className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
+            {/* Mobile: hamburger -> sidebar */}
+            <div className="md:hidden">
+              <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon" className="relative">
+                    <Menu className="h-5 w-5" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="w-[320px] p-0">
+                  <SheetHeader className="px-5 py-4 border-b">
+                    <SheetTitle className="text-base font-semibold">Nomad Dance Academy</SheetTitle>
+                    <div className="text-xs text-muted-foreground">{user?.role === 'teacher' ? 'Кабинет преподавателя' : 'Кабинет'}</div>
+                  </SheetHeader>
+
+                  <div className="p-3 space-y-1">
+                    {mobileNavItems.map((item) => (
+                      <Button
+                        key={item.path}
+                        variant="ghost"
+                        className="w-full justify-start text-sm text-foreground hover:bg-muted"
+                        onClick={() => goTo(item.path)}
+                      >
+                        <span className="truncate">{item.label}</span>
+                      </Button>
+                    ))}
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </div>
+
+            <div className="hidden md:flex items-center gap-6">
               <Button
                 variant="ghost"
                 className="text-foreground/70 hover:text-foreground text-sm"

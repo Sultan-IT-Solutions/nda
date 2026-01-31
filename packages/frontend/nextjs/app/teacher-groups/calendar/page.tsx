@@ -2,11 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { CaretLeft, CaretRight, CalendarBlank } from "@phosphor-icons/react"
+import { CaretLeft, CaretRight, CalendarBlank, List } from "@phosphor-icons/react"
 import { SignOut, User } from "@phosphor-icons/react"
 import { NotificationBell } from "@/components/notification-bell"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,6 +59,8 @@ export default function TeacherCalendarPage() {
   const [user, setUser] = useState<{ name: string; email: string; role: string } | null>(null)
 
   const [mode, setMode] = useState<"lessons" | "halls">("lessons")
+
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
 
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(() => getWeekStart(new Date()))
   const [entries, setEntries] = useState<ScheduleEntry[]>([])
@@ -109,6 +118,18 @@ export default function TeacherCalendarPage() {
     const newDate = new Date(currentWeekStart)
     newDate.setDate(newDate.getDate() + 7)
     setCurrentWeekStart(newDate)
+  }
+
+  const mobileNavItems = [
+    { label: 'Главная', path: '/' },
+    { label: 'Мои группы', path: '/teacher-groups' },
+    { label: 'Расписание', path: '/teacher-groups/calendar' },
+    { label: 'Профиль', path: '/profile' },
+  ]
+
+  const goTo = (path: string) => {
+    setIsMobileNavOpen(false)
+    router.push(path)
   }
 
   useEffect(() => {
@@ -200,7 +221,37 @@ export default function TeacherCalendarPage() {
       <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <nav className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
+            {/* Mobile: hamburger -> sidebar */}
+            <div className="md:hidden">
+              <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon" className="relative">
+                    <List size={22} />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="w-[320px] p-0">
+                  <SheetHeader className="px-5 py-4 border-b">
+                    <SheetTitle className="text-base font-semibold">Nomad Dance Academy</SheetTitle>
+                    <div className="text-xs text-muted-foreground">Кабинет преподавателя</div>
+                  </SheetHeader>
+
+                  <div className="p-3 space-y-1">
+                    {mobileNavItems.map((item) => (
+                      <Button
+                        key={item.path}
+                        variant="ghost"
+                        className="w-full justify-start text-sm text-foreground hover:bg-muted"
+                        onClick={() => goTo(item.path)}
+                      >
+                        <span className="truncate">{item.label}</span>
+                      </Button>
+                    ))}
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </div>
+
+            <div className="hidden md:flex items-center gap-6">
               <Button
                 variant="ghost"
                 className="text-foreground/70 hover:text-foreground text-sm"

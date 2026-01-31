@@ -2,13 +2,20 @@
 
 import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { SignOut, User, MapPin, Clock } from "@phosphor-icons/react"
+import { SignOut, User, MapPin, Clock, List } from "@phosphor-icons/react"
 import { NotificationBell } from "@/components/notification-bell"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { toast } from 'sonner'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -87,6 +94,8 @@ export default function SchedulePage() {
   const [selectedHall, setSelectedHall] = useState<string>("all")
   const [selectedTime, setSelectedTime] = useState<string>("all")
   const [selectedType, setSelectedType] = useState<string>("all")
+
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
 
   const handleLogout = () => {
     logout()
@@ -226,12 +235,55 @@ export default function SchedulePage() {
     email: user?.email || "Не указано",
   }
 
+  const mobileNavItems = [
+    { label: 'Главная', path: '/' },
+    { label: 'Расписание групп', path: '/schedule' },
+    { label: 'Мои группы', path: '/my-groups' },
+    { label: 'Пробный урок', path: '/trial' },
+    { label: 'Профиль', path: '/profile' },
+  ]
+
+  const goTo = (path: string) => {
+    setIsMobileNavOpen(false)
+    router.push(path)
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <nav className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
+            {/* Mobile: hamburger -> sidebar */}
+            <div className="md:hidden">
+              <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon" className="relative">
+                    <List size={22} />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="w-[320px] p-0">
+                  <SheetHeader className="px-5 py-4 border-b">
+                    <SheetTitle className="text-base font-semibold">Nomad Dance Academy</SheetTitle>
+                    <div className="text-xs text-muted-foreground">Расписание</div>
+                  </SheetHeader>
+
+                  <div className="p-3 space-y-1">
+                    {mobileNavItems.map((item) => (
+                      <Button
+                        key={item.path}
+                        variant={item.path === '/schedule' ? 'secondary' : 'ghost'}
+                        className="w-full justify-start text-sm text-foreground hover:bg-muted"
+                        onClick={() => goTo(item.path)}
+                      >
+                        <span className="truncate">{item.label}</span>
+                      </Button>
+                    ))}
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </div>
+
+            <div className="hidden md:flex items-center gap-6">
               <Button
                 variant="ghost"
                 className="text-foreground/70 hover:text-foreground text-sm"
