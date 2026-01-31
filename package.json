@@ -1,0 +1,27 @@
+{
+    "name": "nomad-dance-academy",
+    "version": "1.0.0",
+    "main": "index.js",
+    "author": "Sultan IT Solutions",
+    "scripts": {
+        "dev": "concurrently \"cd packages/frontend/nextjs && npm run dev\" \"cd packages/backend && PYTHONPATH=$(pwd) ../../.venv/bin/python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8001\"",
+        "dev:frontend": "cd packages/frontend/nextjs && npm run dev",
+        "dev:backend": "cd packages/backend && PYTHONPATH=$(pwd) ../../.venv/bin/python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8001",
+        "build": "cd packages/frontend/nextjs && npm run build",
+        "start": "cd packages/frontend/nextjs && npm run start",
+        "format": "prettier --write .",
+        "clean": "rimraf --glob \"**/node_modules\" \"**/.next\""
+    },
+    "workspaces": [
+        "./packages/frontend",
+        "./packages/frontend/nextjs"
+    ],
+    "license": "ISC",
+    "description": "",
+    "dependencies": {
+        "concurrently": "^9.2.0",
+        "prettier": "^3.6.2",
+        "rimraf": "^6.0.1"
+    },
+    "private": true
+}
