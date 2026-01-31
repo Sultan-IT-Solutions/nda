@@ -766,7 +766,7 @@ export default function ProfilePage() {
 
                     <div>
                       <div className="flex justify-between items-center text-sm mb-2">
-                        <span className="text-muted-foreground">Использовано</span>
+                        <span className="text-muted-foreground">Прогресс занятий</span>
                         <span className="font-semibold text-foreground">{sub.used} из {sub.total}</span>
                       </div>
                       <Progress value={sub.total > 0 ? (sub.used / sub.total) * 100 : 0} className="h-2 bg-primary/10" />
@@ -961,51 +961,51 @@ export default function ProfilePage() {
 
                     return (
                       <div key={lesson.lesson_id} className="border border-border rounded-lg p-4 hover:bg-accent/5 transition-colors">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="flex-1 min-w-0">
                             <h3 className="font-semibold text-foreground mb-1">{lesson.class_name}</h3>
                             <p className="text-sm text-muted-foreground mb-2">{lesson.group_name} • {lesson.category_name}</p>
 
-                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                              <div className="flex items-center gap-1">
+                            <div className="grid grid-cols-1 gap-2 text-sm text-muted-foreground sm:flex sm:flex-wrap sm:items-center sm:gap-4">
+                              <div className="flex items-center gap-2 min-w-0">
                                 <Calendar size={14} />
-                                <span>{startDate.toLocaleDateString('ru-RU', {
+                                <span className="truncate">{startDate.toLocaleDateString('ru-RU', {
                                   day: 'numeric',
                                   month: 'short',
                                   year: 'numeric'
                                 })}</span>
                               </div>
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-2 min-w-0">
                                 <Clock size={14} />
-                                <span>
+                                <span className="truncate">
                                   {startDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                                   {' - '}
                                   {endDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                                 </span>
                               </div>
                               {lesson.hall_name && (
-                                <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-2 min-w-0">
                                   <MapPin size={14} />
-                                  <span>{lesson.hall_name}</span>
+                                  <span className="truncate">{lesson.hall_name}</span>
                                 </div>
                               )}
                               {lesson.teacher_name && (
-                                <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-2 min-w-0">
                                   <User size={14} />
-                                  <span>{lesson.teacher_name}</span>
+                                  <span className="truncate">{lesson.teacher_name}</span>
                                 </div>
                               )}
                             </div>
                           </div>
 
-                          <div className="flex flex-col items-end gap-2">
+                          <div className="flex w-full flex-row items-center justify-between gap-2 sm:w-auto sm:flex-col sm:items-end sm:justify-start">
                             <div className={`px-3 py-1.5 rounded-lg border flex items-center gap-2 ${getStatusColor(lesson.status, lesson.is_cancelled)}`}>
                               {getStatusIcon(lesson.status, lesson.is_cancelled)}
                               <span className="text-sm font-medium">
                                 {lesson.is_cancelled ? 'Отменено' : lesson.status_display}
                               </span>
                             </div>
-                            <div className="text-xs text-muted-foreground">
+                            <div className="text-xs text-muted-foreground whitespace-nowrap">
                               {lesson.points}/2 балла
                             </div>
                           </div>
