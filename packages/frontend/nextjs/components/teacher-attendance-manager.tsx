@@ -246,10 +246,10 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
 
             return (
               <div key={lesson.id} className="bg-white border border-gray-200 rounded-lg p-6">
-                <div className="flex items-start justify-between mb-6">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-3">
-                      <h3 className="text-xl font-semibold text-gray-900">{lesson.class_name}</h3>
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-3">
+                      <h3 className="text-xl font-semibold text-gray-900 truncate">{lesson.class_name}</h3>
                       <button
                         onClick={() => handleEditLesson(lesson)}
                         className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
@@ -283,10 +283,10 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
                         </Badge>
                       )}
                     </div>
-                    <div className="flex items-center gap-4 text-sm text-gray-600">
-                      <div className="flex items-center gap-2">
+                    <div className="grid grid-cols-1 gap-2 text-sm text-gray-600 sm:flex sm:flex-wrap sm:items-center sm:gap-4">
+                      <div className="flex items-center gap-2 min-w-0">
                         <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                        <span>
+                        <span className="truncate">
                           {startDate.toLocaleDateString('ru-RU', {
                             weekday: 'long',
                             day: 'numeric',
@@ -294,17 +294,19 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
                           })}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
                         <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                        <span>{startDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} - {endDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>
+                        <span className="truncate">
+                          {startDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} - {endDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full lg:w-auto lg:flex lg:gap-3">
                     <Button
                       size="lg"
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2"
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 w-full"
                       onClick={() => handleMarkAttendance(lesson)}
                     >
                       <Play size={16} className="mr-2" />
@@ -313,7 +315,7 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
                     <Button
                       size="lg"
                       variant="outline"
-                      className="border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2"
+                      className="border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2 w-full"
                       onClick={() => handleRescheduleLesson(lesson)}
                     >
                       <Calendar size={16} className="mr-2" />
