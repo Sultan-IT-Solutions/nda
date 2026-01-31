@@ -8,9 +8,16 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, Clock, MapPin, Calendar, BookOpen, Settings, BarChart, Loader2, ArrowLeft } from 'lucide-react';
+import { Users, Clock, MapPin, Calendar, BookOpen, Settings, BarChart, Loader2, ArrowLeft, Menu } from 'lucide-react';
 import TeacherAttendanceManager from '@/components/teacher-attendance-manager';
 import { API } from '@/lib/api';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 
 interface Student {
   id: number;
@@ -61,6 +68,8 @@ export default function ManageGroupPage() {
   const router = useRouter();
   const groupId = params.groupId as string;
 
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+
   const [activeTab, setActiveTab] = useState('overview');
   const [students, setStudents] = useState<Student[]>([]);
   const [groupStats, setGroupStats] = useState<GroupStats | null>(null);
@@ -99,6 +108,18 @@ export default function ManageGroupPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const mobileNavItems = [
+    { label: 'Главная', path: '/' },
+    { label: 'Мои группы', path: '/teacher-groups' },
+    { label: 'Расписание', path: '/teacher-groups/calendar' },
+    { label: 'Профиль', path: '/profile' },
+  ];
+
+  const goTo = (path: string) => {
+    setIsMobileNavOpen(false);
+    router.push(path);
   };
 
   const handleSaveNotes = async () => {
@@ -178,6 +199,35 @@ export default function ManageGroupPage() {
                   Вместимость: {groupDetails?.capacity || 0} человек
                 </p>
               </div>
+            </div>
+
+            <div className="md:hidden">
+              <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon" className="relative">
+                    <Menu className="w-5 h-5" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="w-[320px] p-0">
+                  <SheetHeader className="px-5 py-4 border-b">
+                    <SheetTitle className="text-base font-semibold">Nomad Dance Academy</SheetTitle>
+                    <div className="text-xs text-muted-foreground">Управление группой</div>
+                  </SheetHeader>
+
+                  <div className="p-3 space-y-1">
+                    {mobileNavItems.map((item) => (
+                      <Button
+                        key={item.path}
+                        variant={item.path === '/teacher-groups' ? 'secondary' : 'ghost'}
+                        className="w-full justify-start text-sm text-foreground hover:bg-muted"
+                        onClick={() => goTo(item.path)}
+                      >
+                        <span className="truncate">{item.label}</span>
+                      </Button>
+                    ))}
+                  </div>
+                </SheetContent>
+              </Sheet>
             </div>
           </div>
         </div>

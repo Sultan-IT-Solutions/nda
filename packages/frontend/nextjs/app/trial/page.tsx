@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { SignOut } from "@phosphor-icons/react";
+import { List, SignOut } from "@phosphor-icons/react";
 import { NotificationBell } from "@/components/notification-bell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,13 @@ import {
 import { API, AUTH_REQUIRED_MESSAGE, handleApiError, logout } from "@/lib/api";
 import { DEFAULT_SESSION_EXPIRED_MESSAGE, buildLoginUrl } from "@/lib/auth";
 import { toast } from "sonner";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 
 interface UserData {
   id: number;
@@ -103,6 +110,7 @@ export default function TrialPage() {
     experience: "",
     message: ""
   });
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -304,13 +312,55 @@ export default function TrialPage() {
     );
   }
 
+  const mobileNavItems = [
+    { label: "Главная", path: "/" },
+    { label: "Расписание групп", path: "/schedule" },
+    { label: "Мои группы", path: "/my-groups" },
+    { label: "Пробный урок", path: "/trial" },
+    { label: "Профиль", path: "/profile" },
+  ];
+
+  const goTo = (path: string) => {
+    setIsMobileNavOpen(false);
+    router.push(path);
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Consistent Header Navigation */}
       <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <nav className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
+            <div className="md:hidden">
+              <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon" className="relative">
+                    <List size={22} />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="w-[320px] p-0">
+                  <SheetHeader className="px-5 py-4 border-b">
+                    <SheetTitle className="text-base font-semibold">Nomad Dance Academy</SheetTitle>
+                    <div className="text-xs text-muted-foreground">Пробный урок</div>
+                  </SheetHeader>
+
+                  <div className="p-3 space-y-1">
+                    {mobileNavItems.map((item) => (
+                      <Button
+                        key={item.path}
+                        variant={item.path === "/trial" ? "secondary" : "ghost"}
+                        className="w-full justify-start text-sm text-foreground hover:bg-muted"
+                        onClick={() => goTo(item.path)}
+                      >
+                        <span className="truncate">{item.label}</span>
+                      </Button>
+                    ))}
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </div>
+
+            <div className="hidden md:flex items-center gap-6">
               <Button
                 variant="ghost"
                 className="text-foreground/70 hover:text-foreground text-sm"
