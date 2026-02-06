@@ -86,6 +86,8 @@ async def get_available_groups():
             g.capacity,
             g.duration_minutes,
             g.is_trial,
+            g.trial_price,
+            g.trial_currency,
             h.id AS hall_id,
             h.name AS hall_name,
             h.capacity AS hall_capacity,
@@ -98,7 +100,7 @@ async def get_available_groups():
         LEFT JOIN teachers t ON t.id = gt.teacher_id
         LEFT JOIN users u ON u.id = t.user_id
         WHERE g.is_closed = FALSE AND g.is_additional = FALSE
-        GROUP BY g.id, g.name, g.capacity, g.duration_minutes, g.is_trial, h.id, h.name, h.capacity
+        GROUP BY g.id, g.name, g.capacity, g.duration_minutes, g.is_trial, g.trial_price, g.trial_currency, h.id, h.name, h.capacity
         ORDER BY g.id
         """
     )
@@ -110,13 +112,33 @@ async def get_available_groups():
         teacher_names = row["teacher_names"] or []
         teacher_ids = row["teacher_ids"] or []
         schedule = await get_group_schedule_formatted(pool, row["id"])
+
+        upcoming_rows = await pool.fetch(
+            """
+            SELECT start_time
+            FROM lessons
+            WHERE group_id = $1
+              AND start_time IS NOT NULL
+              AND start_time >= NOW()
+              AND COALESCE(is_cancelled, FALSE) = FALSE
+            ORDER BY start_time ASC
+            LIMIT 10
+            """,
+            row["id"],
+        )
+        upcoming_lessons = [str(r["start_time"]) for r in upcoming_rows if r.get("start_time")]
+        next_start_time = upcoming_lessons[0] if upcoming_lessons else None
         response.append({
             "id": row["id"],
             "name": row["name"],
             "capacity": capacity,
             "duration_minutes": row["duration_minutes"],
             "is_trial": row["is_trial"],
+            "trial_price": row["trial_price"],
+            "trial_currency": row["trial_currency"],
             "schedule": schedule,
+            "start_time": next_start_time,
+            "upcoming_lessons": upcoming_lessons,
             "hall": {
                 "id": row["hall_id"],
                 "name": row["hall_name"],

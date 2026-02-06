@@ -42,6 +42,8 @@ interface Group {
   name: string
   capacity: number
   duration_minutes: number
+  trial_price: number | null
+  trial_currency: string | null
   hall_id: number | null
   hall_name: string | null
   teacher_name: string | null
@@ -106,6 +108,8 @@ export default function GroupDetailPage() {
     teacher_id: '',
     category_id: '',
     is_trial: false,
+    trial_price: '',
+    trial_currency: '',
     start_date: '',
     end_date: ''
   })
@@ -164,6 +168,8 @@ export default function GroupDetailPage() {
         name: groupData.name,
         capacity: groupData.studentLimit,
         duration_minutes: groupData.duration_minutes,
+        trial_price: (typeof groupData.trial_price === 'number' ? groupData.trial_price : null),
+        trial_currency: (typeof groupData.trial_currency === 'string' ? groupData.trial_currency : null),
         hall_id: groupData.hallId,
         hall_name: groupData.hallName,
         teacher_name: groupData.teacherName,
@@ -189,6 +195,8 @@ export default function GroupDetailPage() {
         teacher_id: groupData.teacherId?.toString() || '',
         category_id: groupData.category_id?.toString() || '',
         is_trial: groupData.is_trial || false,
+        trial_price: typeof groupData.trial_price === 'number' ? groupData.trial_price.toString() : '',
+        trial_currency: (groupData.is_trial ? (typeof groupData.trial_currency === 'string' && groupData.trial_currency.trim().length > 0 ? groupData.trial_currency : '') : ''),
         start_date: groupData.start_date || '',
         end_date: groupData.recurring_until || ''
       })
@@ -198,6 +206,16 @@ export default function GroupDetailPage() {
       console.error("Error fetching group details:", err)
       toast.error("Ошибка при загрузке данных группы")
       setLoading(false)
+    }
+  }
+
+  const enterEditMode = async () => {
+    try {
+      await fetchGroupDetails()
+      setIsEditing(true)
+    } catch (err) {
+      console.error("Error entering edit mode:", err)
+      toast.error(handleApiError(err))
     }
   }
 
@@ -239,6 +257,24 @@ export default function GroupDetailPage() {
 
   const handleSaveChanges = async () => {
     try {
+      if (editForm.is_trial && editForm.trial_price.trim().length === 0) {
+        toast.error("Укажите цену пробного урока")
+        return
+      }
+
+      if (editForm.is_trial && editForm.trial_currency.trim().length === 0) {
+        toast.error("Укажите валюту")
+        return
+      }
+
+      const trialPriceValue = editForm.is_trial
+        ? (editForm.trial_price.trim().length > 0 ? parseInt(editForm.trial_price, 10) : null)
+        : null
+
+      const trialCurrencyValue = editForm.is_trial
+        ? (editForm.trial_currency.trim().length > 0 ? editForm.trial_currency.trim() : null)
+        : null
+
       const updateData = {
         name: editForm.name,
         capacity: parseInt(editForm.capacity),
@@ -247,6 +283,8 @@ export default function GroupDetailPage() {
         main_teacher_id: editForm.teacher_id && editForm.teacher_id !== "none" ? parseInt(editForm.teacher_id) : null,
         category_id: editForm.category_id && editForm.category_id !== "none" ? parseInt(editForm.category_id) : null,
         is_trial: editForm.is_trial,
+        trial_price: trialPriceValue,
+        trial_currency: trialCurrencyValue,
         start_date: editForm.start_date || null,
         recurring_until: editForm.end_date || null
       }
@@ -257,7 +295,7 @@ export default function GroupDetailPage() {
       fetchGroupDetails()
     } catch (err) {
       console.error("Error updating group:", err)
-      toast.error("Ошибка при обновлении группы")
+      toast.error(handleApiError(err))
     }
   }
 
@@ -477,7 +515,7 @@ export default function GroupDetailPage() {
                   </Button>
                 </div>
               ) : (
-                <Button onClick={() => setIsEditing(true)} variant="outline">
+                <Button onClick={enterEditMode} variant="outline">
                   <PencilSimple className="w-4 h-4 mr-2" />
                   Редактировать
                 </Button>
@@ -729,6 +767,39 @@ export default function GroupDetailPage() {
                         Пробный
                       </Label>
                     </div>
+
+                    {editForm.is_trial && (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label>Цена пробного урока</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={editForm.trial_price}
+                            onChange={(e) => setEditForm({ ...editForm, trial_price: e.target.value })}
+                            placeholder="Например: 5000"
+                            className="mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Label>Валюта</Label>
+                          <Select
+                            value={editForm.trial_currency}
+                            onValueChange={(value) => setEditForm({ ...editForm, trial_currency: value })}
+                          >
+                            <SelectTrigger className="mt-1">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="KZT">KZT</SelectItem>
+                              <SelectItem value="RUB">RUB</SelectItem>
+                              <SelectItem value="USD">USD</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>
@@ -776,9 +847,17 @@ export default function GroupDetailPage() {
                         variant={group.is_trial ? "default" : "secondary"}
                         className={group.is_trial ? "bg-purple-600" : ""}
                       >
-                        {group.is_trial ? "Пробный" : "Обычный"}
+                        {group.is_trial ? "Пробный" : "Регулярный"}
                       </Badge>
                     </div>
+
+                    {group.is_trial && typeof group.trial_price === 'number' && (
+                      <div className="flex items-center gap-2">
+                        <Tag className="w-4 h-4 text-gray-500" />
+                        <span className="text-sm text-gray-600">Цена пробного:</span>
+                        <span className="font-medium">{group.trial_price}{group.trial_currency ? ` ${group.trial_currency}` : ''}</span>
+                      </div>
+                    )}
                   </>
                 )}
               </CardContent>

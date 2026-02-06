@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import 'driver.js/dist/driver.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -128,4 +129,95 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* driver.js (onboarding tour) theme overrides */
+.nda-driver-popover.driver-popover {
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: none;
+  padding: 16px;
+  max-width: 340px;
+}
+
+.nda-driver-popover.driver-popover,
+.nda-driver-popover.driver-popover * {
+  font-family: var(--font-sans);
+}
+
+.nda-driver-popover .nda-driver-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.nda-driver-popover .driver-popover-title {
+  font-size: 16px;
+  line-height: 1.4;
+  font-weight: 700;
+  margin: 0;
+}
+
+.nda-driver-popover .driver-popover-description {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.nda-driver-popover .driver-popover-close-btn {
+  position: static;
+  width: auto;
+  height: auto;
+  padding: 6px 10px;
+  border-radius: calc(var(--radius) - 6px);
+  border: 1px solid transparent;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.nda-driver-popover .driver-popover-close-btn:hover,
+.nda-driver-popover .driver-popover-close-btn:focus {
+  color: var(--primary-foreground);
+}
+
+.nda-driver-popover .driver-popover-footer {
+  margin-top: 14px;
+}
+
+.nda-driver-popover .driver-popover-progress-text {
+  color: var(--muted-foreground);
+}
+
+.nda-driver-popover .driver-popover-footer button {
+  text-shadow: none;
+  border-radius: calc(var(--radius) - 6px);
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+}
+
+.nda-driver-popover .nda-driver-prev {
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+}
+
+.nda-driver-popover .nda-driver-next {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: transparent;
+}
+
+.nda-driver-popover .driver-popover-footer button:hover,
+.nda-driver-popover .driver-popover-footer button:focus {
+  background-image: none;
+}
+
+.nda-driver-popover .driver-popover-arrow {
+  border-color: var(--popover);
 }

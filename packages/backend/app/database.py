@@ -1,5 +1,6 @@
 import asyncpg
 from typing import Optional
+import ssl
 from .config import get_settings
 pool: Optional[asyncpg.Pool] = None
 async def connect_to_database():
@@ -13,16 +14,25 @@ async def connect_to_database():
                 max_size=5,
             )
         else:
+            ssl_ctx = None
+            try:
+                if isinstance(settings.DB_HOST, str) and "neon.tech" in settings.DB_HOST:
+                    ssl_ctx = ssl.create_default_context()
+            except Exception:
+                ssl_ctx = None
+
             pool = await asyncpg.create_pool(
                 host=settings.DB_HOST,
                 port=settings.DB_PORT,
                 database=settings.DB_NAME,
                 user=settings.DB_USER,
                 password=settings.DB_PASSWORD or None,
+                ssl=ssl_ctx,
                 min_size=1,
                 max_size=5
             )
-        print("Connected to PostgreSQL successfully!")
+        target = "DATABASE_URL" if getattr(settings, "DATABASE_URL", None) else f"{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
+        print(f"Connected to PostgreSQL successfully ({target})")
     except Exception as e:
         print(f"Failed to connect to PostgreSQL: {e}")
         raise

@@ -33,6 +33,8 @@ interface Group {
   studentCount: number;
   isActive: boolean;
   is_trial: boolean;
+  trial_price?: number | null;
+  trial_currency?: string | null;
 }
 
 export default function GroupsPage() {
@@ -145,9 +147,16 @@ export default function GroupsPage() {
                         variant={group.is_trial ? "default" : "secondary"}
                         className={`ml-2 ${group.is_trial ? "bg-purple-600" : ""}`}
                       >
-                        {group.is_trial ? "Пробный" : "Обычный"}
+                        {group.is_trial ? "Пробный" : "Регулярный"}
                       </Badge>
                     </div>
+
+                    {group.is_trial && typeof group.trial_price === 'number' && (
+                      <div className="flex items-center text-sm text-gray-600">
+                        <Tag className="w-4 h-4 mr-2" />
+                        <span>Цена пробного: {group.trial_price}{group.trial_currency ? ` ${group.trial_currency}` : ''}</span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between pt-2 border-t">
                       <span className="text-sm text-gray-600">
                         Учеников: {group.studentCount}/{group.studentLimit}

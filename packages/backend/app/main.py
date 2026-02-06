@@ -46,6 +46,15 @@ async def lifespan(app: FastAPI):
     if connect_to_database is not None:
         try:
             await connect_to_database()
+            try:
+                from app.database import get_connection
+                pool = await get_connection()
+                async with pool.acquire() as conn:
+                    await conn.execute("ALTER TABLE groups ADD COLUMN IF NOT EXISTS trial_price INTEGER")
+                    await conn.execute("ALTER TABLE groups ADD COLUMN IF NOT EXISTS trial_currency TEXT")
+                print("DB migration ensured: groups.trial_price")
+            except Exception:
+                traceback.print_exc()
         except Exception:
             traceback.print_exc()
     yield

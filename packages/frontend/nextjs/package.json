@@ -5,7 +5,7 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev",
-    "lint": "eslint .",
+    "lint": "eslint . --ignore-pattern .next --ignore-pattern node_modules --ignore-pattern dist --ignore-pattern out",
     "start": "next start"
   },
   "dependencies": {
@@ -46,6 +46,7 @@
     "clsx": "^2.1.1",
     "cmdk": "1.0.4",
     "date-fns": "4.1.0",
+    "driver.js": "^1.4.0",
     "embla-carousel-react": "8.5.1",
     "eslint": "latest",
     "eslint-plugin-react-hooks": "latest",
@@ -58,9 +59,9 @@
     "lucide-react": "^0.454.0",
     "next": "^16.0.0",
     "next-themes": "^0.4.6",
-    "react": "^19.2.0",
+    "react": "19.2.3",
     "react-day-picker": "9.8.0",
-    "react-dom": "^19.2.3",
+    "react-dom": "19.2.3",
     "react-hook-form": "^7.60.0",
     "react-resizable-panels": "^2.1.7",
     "recharts": "2.15.4",

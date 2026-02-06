@@ -33,6 +33,8 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
     hall_id: '',
     duration_minutes: '60',
     is_trial: false,
+    trial_price: '',
+    trial_currency: 'KZT',
     start_date: new Date().toISOString().split('T')[0],
     end_date: '',
   });
@@ -40,6 +42,11 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
   const handleSubmit = async () => {
     if (!formData.name || !formData.direction || !formData.start_date) {
       alert('Пожалуйста, заполните название группы, направление и дату начала');
+      return;
+    }
+
+    if (formData.is_trial && formData.trial_price.trim().length === 0) {
+      alert('Укажите цену пробного урока');
       return;
     }
 
@@ -61,6 +68,13 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
         recurring_days: null,
         class_name: categories.find(cat => cat.id.toString() === formData.direction)?.name || formData.name,
         is_trial: formData.is_trial,
+        trial_price:
+          formData.is_trial && formData.trial_price.trim().length > 0
+            ? parseInt(formData.trial_price, 10)
+            : null,
+        trial_currency: formData.is_trial
+          ? (formData.trial_currency?.toString().trim().length > 0 ? formData.trial_currency : 'KZT')
+          : null,
         start_date: formData.start_date,
         end_date: formData.end_date || null,
       };
@@ -76,6 +90,8 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
         hall_id: '',
         duration_minutes: '60',
         is_trial: false,
+        trial_price: '',
+        trial_currency: 'KZT',
         start_date: new Date().toISOString().split('T')[0],
         end_date: '',
       });
@@ -276,6 +292,40 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
               Пробный
             </Label>
           </div>
+
+          {formData.is_trial && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="trial_price">Цена пробного урока</Label>
+                <Input
+                  id="trial_price"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={formData.trial_price}
+                  onChange={(e) => handleInputChange('trial_price', e.target.value)}
+                  placeholder="Например: 5000"
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="trial_currency">Валюта</Label>
+                <Select
+                  value={formData.trial_currency}
+                  onValueChange={(value) => handleInputChange('trial_currency', value)}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="KZT">KZT</SelectItem>
+                    <SelectItem value="RUB">RUB</SelectItem>
+                    <SelectItem value="USD">USD</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
 
           <div>
             <Label htmlFor="description">Описание (необязательно)</Label>

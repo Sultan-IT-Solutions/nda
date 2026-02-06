@@ -102,7 +102,8 @@ export default function ProfilePage() {
   const [currentAttendancePage, setCurrentAttendancePage] = useState(0)
   const attendancePerPage = 5
   const [lessonsExpanded, setLessonsExpanded] = useState(false)
-  const [selectedGroupFilter, setSelectedGroupFilter] = useState<number | 'all'>('all')
+  const [selectedGroupFilter, setSelectedGroupFilter] = useState<number | null>(null)
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'P' | 'L' | 'E' | 'A'>('all')
 
   const handleLogout = () => {
     logout()
@@ -202,6 +203,20 @@ export default function ProfilePage() {
     fetchData()
   }, [router, pathname])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const welcome = params.get('welcome')
+    if (welcome === '1') {
+      toast.success('Добро пожаловать! Здесь вы найдете расписание и историю посещений.')
+
+      params.delete('welcome')
+      const next = params.toString()
+      const nextUrl = next ? `/profile?${next}` : '/profile'
+      window.history.replaceState({}, '', nextUrl)
+    }
+  }, [router])
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -271,7 +286,7 @@ export default function ProfilePage() {
       title: group.name || "Без названия",
       category: group.category_name || "Без направления",
       badge: group.isActive
-        ? (group.is_trial ? "Пробный" : "Обычный")
+        ? (group.is_trial ? "Пробный" : "Регулярный")
         : "Группа закрыта",
       instructor: group.teacher_name || "Не назначен",
       participants: [],
@@ -314,7 +329,7 @@ export default function ProfilePage() {
       id: group.id,
       title: group.name || "Без названия",
       category: group.category_name || "Без направления",
-      badge: group.is_trial ? "Пробный" : (group.isActive ? "Обычный" : "Группа закрыта"),
+      badge: group.is_trial ? "Пробный" : (group.isActive ? "Регулярный" : "Группа закрыта"),
       used: attendedLessons,
       total: totalLessons,
       remaining: remainingLessons,
@@ -341,19 +356,20 @@ export default function ProfilePage() {
     }
   }
 
-  const filteredLessons = (selectedGroupFilter === 'all'
-    ? lessonAttendance
-    : lessonAttendance.filter(lesson => lesson.group_id === selectedGroupFilter)
-  ).sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+  const selectedGroupLessons = (selectedGroupFilter == null
+    ? []
+    : lessonAttendance.filter((lesson) => lesson.group_id === selectedGroupFilter)
+  )
+    .filter((lesson) => {
+      if (selectedStatusFilter === 'all') return true
+      return lesson.status === selectedStatusFilter
+    })
+    .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
 
-  const totalAttendancePages = Math.ceil(filteredLessons.length / attendancePerPage)
-  const currentAttendanceLessons = filteredLessons.slice(
+  const totalAttendancePages = Math.ceil(selectedGroupLessons.length / attendancePerPage)
+  const currentAttendanceLessons = selectedGroupLessons.slice(
     currentAttendancePage * attendancePerPage,
     (currentAttendancePage + 1) * attendancePerPage
-  )
-
-  const availableGroups = Array.from(
-    new Map(lessonAttendance.map(lesson => [lesson.group_id, { id: lesson.group_id, name: lesson.group_name }])).values()
   )
 
   const goToNextAttendancePage = () => {
@@ -368,8 +384,33 @@ export default function ProfilePage() {
     }
   }
 
-  const handleGroupFilterChange = (value: string) => {
-    setSelectedGroupFilter(value === 'all' ? 'all' : parseInt(value))
+  const openHistoryFor = (groupId: number, status: 'P' | 'L' | 'E' | 'A') => {
+    const sameGroup = selectedGroupFilter === groupId
+    const nextStatus = sameGroup && selectedStatusFilter === status ? 'all' : status
+
+    setSelectedGroupFilter(groupId)
+    setSelectedStatusFilter(nextStatus)
+    setLessonsExpanded(true)
+    setCurrentAttendancePage(0)
+  }
+
+  const toggleHistoryForGroup = (groupId: number) => {
+    const isOpen = lessonsExpanded && selectedGroupFilter === groupId
+    if (isOpen) {
+      closeInlineHistory()
+      return
+    }
+
+    setSelectedGroupFilter(groupId)
+    setSelectedStatusFilter('all')
+    setLessonsExpanded(true)
+    setCurrentAttendancePage(0)
+  }
+
+  const closeInlineHistory = () => {
+    setLessonsExpanded(false)
+    setSelectedGroupFilter(null)
+    setSelectedStatusFilter('all')
     setCurrentAttendancePage(0)
   }
 
@@ -486,7 +527,7 @@ export default function ProfilePage() {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-1">Мой профиль</h1>
+          <h1 data-tour="profile-title" className="text-3xl font-bold text-foreground mb-1">Мой профиль</h1>
           <p className="text-sm text-primary">Личная информация и статистика</p>
         </div>
 
@@ -731,7 +772,7 @@ export default function ProfilePage() {
         </Card>
 
         {isStudent && (
-        <Card className="p-6 border-0 shadow-sm bg-card/80">
+        <Card data-tour="profile-attendance" className="p-6 border-0 shadow-sm bg-card/80">
           <div className="flex items-center gap-2 mb-6">
             <div className="p-2 rounded-lg bg-primary/10">
               <CheckCircle size={20} className="text-primary" weight="duotone" />
@@ -752,45 +793,69 @@ export default function ProfilePage() {
                       <div className="text-right">
                         <div className="text-xs text-muted-foreground mb-1">Посещаемость</div>
                         <div className="text-2xl font-bold text-primary">{item.percentage}%</div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => toggleHistoryForGroup(item.id)}
+                          className="h-8 mt-2"
+                        >
+                          История посещений
+                        </Button>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                      <div className="bg-green-50 rounded-xl p-4 border border-green-200">
+                      <button
+                        type="button"
+                        onClick={() => openHistoryFor(item.id, 'P')}
+                        className="bg-green-50 rounded-xl p-4 border border-green-200 text-left hover:bg-green-100/60 transition-colors"
+                      >
                         <div className="flex items-center gap-2 mb-2">
                           <CheckCircle size={18} weight="fill" className="text-green-600" />
                           <span className="text-xs font-medium text-green-700">Присутствовал (P)</span>
                         </div>
                         <div className="text-3xl font-bold text-green-700">{item.present || 0}</div>
                         <div className="text-xs text-green-600 mt-1">2/2 балла</div>
-                      </div>
+                      </button>
 
-                      <div className="bg-yellow-50 rounded-xl p-4 border border-yellow-200">
+                      <button
+                        type="button"
+                        onClick={() => openHistoryFor(item.id, 'L')}
+                        className="bg-yellow-50 rounded-xl p-4 border border-yellow-200 text-left hover:bg-yellow-100/60 transition-colors"
+                      >
                         <div className="flex items-center gap-2 mb-2">
                           <Warning size={18} weight="fill" className="text-yellow-600" />
                           <span className="text-xs font-medium text-yellow-700">Опоздал (L)</span>
                         </div>
                         <div className="text-3xl font-bold text-yellow-700">{item.late || 0}</div>
                         <div className="text-xs text-yellow-600 mt-1">1/2 балла</div>
-                      </div>
+                      </button>
 
-                      <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                      <button
+                        type="button"
+                        onClick={() => openHistoryFor(item.id, 'E')}
+                        className="bg-blue-50 rounded-xl p-4 border border-blue-200 text-left hover:bg-blue-100/60 transition-colors"
+                      >
                         <div className="flex items-center gap-2 mb-2">
                           <CalendarBlank size={18} weight="fill" className="text-blue-600" />
                           <span className="text-xs font-medium text-blue-700">Уваж. причина (E)</span>
                         </div>
                         <div className="text-3xl font-bold text-blue-700">{item.excused || 0}</div>
                         <div className="text-xs text-blue-600 mt-1">2/2 балла</div>
-                      </div>
+                      </button>
 
-                      <div className="bg-red-50 rounded-xl p-4 border border-red-200">
+                      <button
+                        type="button"
+                        onClick={() => openHistoryFor(item.id, 'A')}
+                        className="bg-red-50 rounded-xl p-4 border border-red-200 text-left hover:bg-red-100/60 transition-colors"
+                      >
                         <div className="flex items-center gap-2 mb-2">
                           <XCircle size={18} weight="fill" className="text-red-600" />
                           <span className="text-xs font-medium text-red-700">Отсутствовал (A)</span>
                         </div>
                         <div className="text-3xl font-bold text-red-700">{item.missed || 0}</div>
                         <div className="text-xs text-red-600 mt-1">0/2 балла</div>
-                      </div>
+                      </button>
                     </div>
 
                     <div className="mb-3">
@@ -806,157 +871,171 @@ export default function ProfilePage() {
                         </div>
                       )}
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
 
-            {lessonAttendance.length > 0 && (
-              <div className="border-t border-border pt-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setLessonsExpanded(!lessonsExpanded)}
-                      className="p-1 h-8 w-8"
-                    >
-                      <CaretDown
-                        size={16}
-                        className={`transition-transform duration-200 ${lessonsExpanded ? 'rotate-0' : '-rotate-90'}`}
-                      />
-                    </Button>
-                    <h3 className="text-lg font-semibold text-foreground">Занятия</h3>
-                    {lessonsExpanded && availableGroups.length > 1 && (
-                      <Select
-                        value={selectedGroupFilter.toString()}
-                        onValueChange={handleGroupFilterChange}
+                    {lessonsExpanded && selectedGroupFilter === item.id && (
+                      <div
+                        id={`attendance-history-${item.id}`}
+                        className="mt-4 rounded-xl border border-border/60 bg-muted/20 p-4"
                       >
-                        <SelectTrigger className="w-48 h-8 text-sm">
-                          <SelectValue placeholder="Выберите группу" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Все группы</SelectItem>
-                          {availableGroups.map((group) => (
-                            <SelectItem key={group.id} value={group.id.toString()}>
-                              {group.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <h4 className="text-sm font-semibold text-foreground whitespace-nowrap">История посещений</h4>
+                            {selectedStatusFilter !== 'all' && (
+                              <Badge variant="outline" className="shrink-0">
+                                {selectedStatusFilter === 'P'
+                                  ? 'Присутствовал'
+                                  : selectedStatusFilter === 'E'
+                                    ? 'Уваж. причина'
+                                    : selectedStatusFilter === 'L'
+                                      ? 'Опоздал'
+                                      : 'Отсутствовал'}
+                              </Badge>
+                            )}
+                          </div>
+
+                          <Button variant="ghost" size="sm" onClick={closeInlineHistory} className="h-8">
+                            Скрыть
+                          </Button>
+                        </div>
+
+                        {selectedGroupLessons.length === 0 ? (
+                          <div className="text-sm text-muted-foreground">Нет занятий по выбранному фильтру.</div>
+                        ) : (
+                          <>
+                            <div className="space-y-3">
+                              {currentAttendanceLessons.map((lesson) => {
+                                const startDate = new Date(lesson.start_time)
+                                const endDate = new Date(lesson.end_time)
+
+                                const getStatusColor = (status: string | null, isCancelled: boolean = false) => {
+                                  if (isCancelled) return 'bg-red-50 border-red-200 text-red-700'
+                                  switch (status) {
+                                    case 'P':
+                                      return 'bg-green-50 border-green-200 text-green-700'
+                                    case 'E':
+                                      return 'bg-blue-50 border-blue-200 text-blue-700'
+                                    case 'L':
+                                      return 'bg-yellow-50 border-yellow-200 text-yellow-700'
+                                    case 'A':
+                                      return 'bg-red-50 border-red-200 text-red-700'
+                                    default:
+                                      return 'bg-gray-50 border-gray-200 text-gray-700'
+                                  }
+                                }
+
+                                const getStatusIcon = (status: string | null, isCancelled: boolean = false) => {
+                                  if (isCancelled) return <XCircle size={16} weight="fill" className="text-red-600" />
+                                  switch (status) {
+                                    case 'P':
+                                      return <CheckCircle size={16} weight="fill" className="text-green-600" />
+                                    case 'E':
+                                      return <CalendarBlank size={16} weight="fill" className="text-blue-600" />
+                                    case 'L':
+                                      return <Warning size={16} weight="fill" className="text-yellow-600" />
+                                    case 'A':
+                                      return <XCircle size={16} weight="fill" className="text-red-600" />
+                                    default:
+                                      return <Clock size={16} className="text-gray-600" />
+                                  }
+                                }
+
+                                return (
+                                  <div
+                                    key={lesson.lesson_id}
+                                    className="border border-border rounded-lg p-4 hover:bg-accent/5 transition-colors"
+                                  >
+                                    <div className="flex items-start justify-between">
+                                      <div className="flex-1">
+                                        <h3 className="font-semibold text-foreground mb-1">{lesson.class_name}</h3>
+                                        <p className="text-sm text-muted-foreground mb-2">
+                                          {lesson.group_name} • {lesson.category_name}
+                                        </p>
+
+                                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+                                          <div className="flex items-center gap-1">
+                                            <Calendar size={14} />
+                                            <span>
+                                              {startDate.toLocaleDateString('ru-RU', {
+                                                day: 'numeric',
+                                                month: 'short',
+                                                year: 'numeric',
+                                              })}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-1">
+                                            <Clock size={14} />
+                                            <span>
+                                              {startDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                                              {' - '}
+                                              {endDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                                            </span>
+                                          </div>
+                                          {lesson.hall_name && (
+                                            <div className="flex items-center gap-1">
+                                              <MapPin size={14} />
+                                              <span>{lesson.hall_name}</span>
+                                            </div>
+                                          )}
+                                          {lesson.teacher_name && (
+                                            <div className="flex items-center gap-1">
+                                              <User size={14} />
+                                              <span>{lesson.teacher_name}</span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      <div className="flex flex-col items-end gap-2">
+                                        <div
+                                          className={`px-3 py-1.5 rounded-lg border flex items-center gap-2 ${getStatusColor(
+                                            lesson.status,
+                                            lesson.is_cancelled
+                                          )}`}
+                                        >
+                                          {getStatusIcon(lesson.status, lesson.is_cancelled)}
+                                          <span className="text-sm font-medium">
+                                            {lesson.is_cancelled ? 'Отменено' : lesson.status_display}
+                                          </span>
+                                        </div>
+                                        <div className="text-xs text-muted-foreground">{lesson.points}/2 балла</div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+
+                            {selectedGroupLessons.length > attendancePerPage && (
+                              <div className="flex items-center justify-end gap-2 mt-3">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={goToPrevAttendancePage}
+                                  disabled={currentAttendancePage === 0}
+                                  className="h-8 w-8 p-0"
+                                >
+                                  <CaretLeft size={14} />
+                                </Button>
+                                <span className="text-sm text-muted-foreground">
+                                  {currentAttendancePage + 1} из {totalAttendancePages}
+                                </span>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={goToNextAttendancePage}
+                                  disabled={currentAttendancePage === totalAttendancePages - 1}
+                                  className="h-8 w-8 p-0"
+                                >
+                                  <CaretRight size={14} />
+                                </Button>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
                     )}
                   </div>
-                  {lessonsExpanded && filteredLessons.length > attendancePerPage && (
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={goToPrevAttendancePage}
-                        disabled={currentAttendancePage === 0}
-                        className="h-8 w-8 p-0"
-                      >
-                        <CaretLeft size={14} />
-                      </Button>
-                      <span className="text-sm text-muted-foreground">
-                        {currentAttendancePage + 1} из {totalAttendancePages}
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={goToNextAttendancePage}
-                        disabled={currentAttendancePage === totalAttendancePages - 1}
-                        className="h-8 w-8 p-0"
-                      >
-                        <CaretRight size={14} />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-
-                {lessonsExpanded && (
-                  <div className="space-y-4">
-                    {currentAttendanceLessons.map((lesson) => {
-                      const startDate = new Date(lesson.start_time)
-                    const endDate = new Date(lesson.end_time)
-
-                    const getStatusColor = (status: string | null, isCancelled: boolean = false) => {
-                      if (isCancelled) return 'bg-red-50 border-red-200 text-red-700'
-                      switch (status) {
-                        case 'P': return 'bg-green-50 border-green-200 text-green-700'
-                        case 'E': return 'bg-blue-50 border-blue-200 text-blue-700'
-                        case 'L': return 'bg-yellow-50 border-yellow-200 text-yellow-700'
-                        case 'A': return 'bg-red-50 border-red-200 text-red-700'
-                        default: return 'bg-gray-50 border-gray-200 text-gray-700'
-                      }
-                    }
-
-                    const getStatusIcon = (status: string | null, isCancelled: boolean = false) => {
-                      if (isCancelled) return <XCircle size={16} weight="fill" className="text-red-600" />
-                      switch (status) {
-                        case 'P': return <CheckCircle size={16} weight="fill" className="text-green-600" />
-                        case 'E': return <CalendarBlank size={16} weight="fill" className="text-blue-600" />
-                        case 'L': return <Warning size={16} weight="fill" className="text-yellow-600" />
-                        case 'A': return <XCircle size={16} weight="fill" className="text-red-600" />
-                        default: return <Clock size={16} className="text-gray-600" />
-                      }
-                    }
-
-                    return (
-                      <div key={lesson.lesson_id} className="border border-border rounded-lg p-4 hover:bg-accent/5 transition-colors">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-foreground mb-1">{lesson.class_name}</h3>
-                            <p className="text-sm text-muted-foreground mb-2">{lesson.group_name} • {lesson.category_name}</p>
-
-                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                              <div className="flex items-center gap-1">
-                                <Calendar size={14} />
-                                <span>{startDate.toLocaleDateString('ru-RU', {
-                                  day: 'numeric',
-                                  month: 'short',
-                                  year: 'numeric'
-                                })}</span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <Clock size={14} />
-                                <span>
-                                  {startDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                                  {' - '}
-                                  {endDate.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                                </span>
-                              </div>
-                              {lesson.hall_name && (
-                                <div className="flex items-center gap-1">
-                                  <MapPin size={14} />
-                                  <span>{lesson.hall_name}</span>
-                                </div>
-                              )}
-                              {lesson.teacher_name && (
-                                <div className="flex items-center gap-1">
-                                  <User size={14} />
-                                  <span>{lesson.teacher_name}</span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="flex flex-col items-end gap-2">
-                            <div className={`px-3 py-1.5 rounded-lg border flex items-center gap-2 ${getStatusColor(lesson.status, lesson.is_cancelled)}`}>
-                              {getStatusIcon(lesson.status, lesson.is_cancelled)}
-                              <span className="text-sm font-medium">
-                                {lesson.is_cancelled ? 'Отменено' : lesson.status_display}
-                              </span>
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {lesson.points}/2 балла
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                  </div>
-                )}
+                ))}
               </div>
             )}
 

@@ -99,20 +99,24 @@ async def save_group_schedule(pool, group_id: int, schedules: dict):
             """,
             group_id, day_num, start_time
         )
+
 class CreateHallRequest(BaseModel):
     name: str
     capacity: int
+
 class CreateStudentRequest(BaseModel):
     name: str
     email: str
     password: str
     phone_number: str
+
 class CreateTeacherRequest(BaseModel):
     name: str
     email: str
     password: str
     hourly_rate: Optional[float] = None
     bio: Optional[str] = None
+
 class CreateGroupRequest(BaseModel):
     name: str
     category_id: Optional[int] = None
@@ -122,15 +126,19 @@ class CreateGroupRequest(BaseModel):
     capacity: int = 12
     class_name: Optional[str] = None
     is_trial: bool = False
+    trial_price: Optional[int] = None
+    trial_currency: Optional[str] = None
     start_date: str
     end_date: Optional[str] = None
     start_time: Optional[str] = None
     recurring_days: Optional[str] = None
     class Config:
         extra = "ignore"
+
 class Unset:
     pass
 UNSET = Unset()
+
 class UpdateGroupRequest(BaseModel):
     name: Optional[str] = None
     category_id: Optional[int] = None
@@ -142,11 +150,15 @@ class UpdateGroupRequest(BaseModel):
     start_date: Optional[str] = None
     is_closed: Optional[bool] = None
     is_trial: Optional[bool] = None
+    trial_price: Optional[int] = UNSET
+    trial_currency: Optional[str] = UNSET
     schedules: Optional[dict] = None
+
     model_config = {
         "arbitrary_types_allowed": True
     }
     @field_validator('recurring_until')
+
     @classmethod
     def parse_recurring_until(cls, v):
         if v is None or v == "":
@@ -164,6 +176,7 @@ class UpdateGroupRequest(BaseModel):
                         raise ValueError(f"Invalid date format for recurring_until: {v}. Expected YYYY-MM-DD")
         return v
     @field_validator('start_date')
+
     @classmethod
     def parse_start_date(cls, v):
         if v is None or v == "":
@@ -180,22 +193,29 @@ class UpdateGroupRequest(BaseModel):
                     except ValueError:
                         raise ValueError(f"Invalid date format for start_date: {v}. Expected YYYY-MM-DD")
         return v
+    
 class GroupLimitRequest(BaseModel):
     capacity: int
+
 class AddStudentToGroupRequest(BaseModel):
     student_id: int
     is_trial: bool = False
+
 class AttendanceRecord(BaseModel):
     student_id: int
     attended: bool
+
 class SaveAttendanceRequest(BaseModel):
     lesson_date: datetime
     records: List[AttendanceRecord]
+
 class AttendanceStatus(BaseModel):
     student_id: int
     status: str
+
 class SaveLessonAttendanceRequest(BaseModel):
     attendance: List[AttendanceStatus]
+
 class CreateLessonRequest(BaseModel):
     group_id: int
     class_name: str
@@ -204,6 +224,7 @@ class CreateLessonRequest(BaseModel):
     start_time: Union[datetime, str]
     duration_minutes: int = 90
     @field_validator('start_time')
+    
     @classmethod
     def parse_start_time(cls, v):
         if isinstance(v, datetime):
@@ -766,7 +787,7 @@ async def get_groups(user: dict = Depends(require_admin)):
         """
         SELECT
             g.id, g.name, g.capacity, g.duration_minutes,
-            g.is_additional, g.is_closed, g.is_trial, g.notes,
+            g.is_additional, g.is_closed, g.is_trial, g.trial_price, g.trial_currency, g.notes,
             h.id AS hall_id, h.name AS hall_name,
             u.name AS teacher_name,
             c.id AS category_id, c.name AS category_name, c.color AS category_color,
@@ -795,6 +816,8 @@ async def get_groups(user: dict = Depends(require_admin)):
             "studentCount": enrolled,
             "isActive": not r["is_closed"],
             "is_trial": r["is_trial"],
+            "trial_price": r["trial_price"],
+                        "trial_currency": r["trial_currency"],
             "category": {
                 "id": r["category_id"],
                 "name": r["category_name"],
@@ -819,7 +842,7 @@ async def get_group_details(group_id: int, user: dict = Depends(require_admin)):
         """
         SELECT
             g.id, g.name, g.capacity, g.duration_minutes, g.category_id,
-            g.is_additional, g.is_closed, g.is_trial, g.recurring_until, g.notes, g.class_name,
+            g.is_additional, g.is_closed, g.is_trial, g.trial_price, g.trial_currency, g.recurring_until, g.notes, g.class_name,
             g.start_date,
             h.id AS hall_id, h.name AS hall_name,
             t.id AS teacher_id, u.name AS teacher_name,
@@ -931,6 +954,8 @@ async def get_group_details(group_id: int, user: dict = Depends(require_admin)):
         "studentLimit": row["capacity"],
         "isActive": not row["is_closed"],
         "is_trial": row["is_trial"],
+        "trial_price": row["trial_price"],
+        "trial_currency": row["trial_currency"],
         "schedules": schedules_dict,
         "start_date": row["start_date"].strftime("%Y-%m-%d") if row["start_date"] else "",
         "recurring_until": row["recurring_until"].strftime("%Y-%m-%d") if row["recurring_until"] else "",
@@ -951,11 +976,21 @@ async def create_group(data: CreateGroupRequest, user: dict = Depends(require_ad
             async with conn.transaction():
                 result = await conn.fetchrow(
                     """
-                    INSERT INTO groups (name, category_id, hall_id, duration_minutes, capacity, class_name, is_trial, start_date, recurring_until)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    INSERT INTO groups (name, category_id, hall_id, duration_minutes, capacity, class_name, is_trial, trial_price, trial_currency, start_date, recurring_until)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                     RETURNING id
                     """,
-                    data.name, data.category_id, data.hall_id, data.duration_minutes, data.capacity, data.class_name, data.is_trial, start_date, end_date
+                    data.name,
+                    data.category_id,
+                    data.hall_id,
+                    data.duration_minutes,
+                    data.capacity,
+                    data.class_name,
+                    data.is_trial,
+                    (data.trial_price if data.is_trial else None),
+                    (data.trial_currency if data.is_trial else None),
+                    start_date,
+                    end_date,
                 )
                 group_id = result["id"]
                 if data.main_teacher_id:
@@ -1014,6 +1049,22 @@ async def update_group(group_id: int, data: UpdateGroupRequest, user: dict = Dep
     if data.is_trial is not None:
         updates.append(f"is_trial = ${param_count}")
         values.append(data.is_trial)
+        param_count += 1
+
+        if data.is_trial is False and isinstance(data.trial_price, Unset):
+            updates.append("trial_price = NULL")
+
+        if data.is_trial is False and isinstance(data.trial_currency, Unset):
+            updates.append("trial_currency = NULL")
+
+    if not isinstance(data.trial_price, Unset):
+        updates.append(f"trial_price = ${param_count}")
+        values.append(data.trial_price)
+        param_count += 1
+
+    if not isinstance(data.trial_currency, Unset):
+        updates.append(f"trial_currency = ${param_count}")
+        values.append(data.trial_currency)
         param_count += 1
     if updates:
         values.append(group_id)

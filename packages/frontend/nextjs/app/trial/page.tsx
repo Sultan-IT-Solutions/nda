@@ -62,6 +62,11 @@ interface Group {
   capacity: number;
   duration_minutes: number;
   is_trial: boolean;
+  trial_price?: number | null;
+  trial_currency?: string | null;
+  schedule?: string | null;
+  start_time?: string | null;
+  recurring_days?: string | null;
   hall: {
     id: number;
     name: string;
@@ -396,22 +401,22 @@ export default function TrialPage() {
       <main className="max-w-7xl mx-auto px-6 py-8">
         {/* Header Section */}
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold mb-4">Пробные уроки</h1>
+          <h1 data-tour="trial-title" className="text-4xl font-bold mb-4">Пробные уроки</h1>
           <p className="text-xl text-muted-foreground mb-6">
-            Попробуйте наши танцевальные занятия бесплатно
+            Приходите познакомиться со школой и преподавателем — разогреемся и разучим базовую связку
           </p>
           <div className="flex justify-center items-center gap-6 text-sm text-muted-foreground flex-wrap">
             <div className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-green-500" />
-              <span>Без обязательств</span>
+              <span>Без оплаты заранее — решите после урока</span>
             </div>
             <div className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-green-500" />
-              <span>Профессиональные преподаватели</span>
+              <span>Понятные объяснения и поддержка</span>
             </div>
             <div className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-green-500" />
-              <span>Все уровни подготовки</span>
+              <span>Подходит для новичков и продолжающих</span>
             </div>
           </div>
         </div>
@@ -444,7 +449,7 @@ export default function TrialPage() {
         )}
 
         {/* Available Groups */}
-        <div className="mb-12">
+        <div data-tour="trial-available" className="mb-12">
           <h2 className="text-2xl font-semibold mb-6">Доступные группы для пробного урока</h2>
           {availableGroups.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -459,6 +464,22 @@ export default function TrialPage() {
                     </p>
                   </CardHeader>
                   <CardContent className="space-y-3">
+                    <div className="flex items-center gap-2 text-sm">
+                      <Calendar className="h-4 w-4" />
+                      <span>{(group.schedule && group.schedule !== 'Не назначено') ? group.schedule : 'Расписание уточняется'}</span>
+                    </div>
+
+                    {group.is_trial && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <Star className="h-4 w-4" />
+                        <span>
+                          Цена: {typeof group.trial_price === 'number'
+                            ? `${group.trial_price}${typeof group.trial_currency === 'string' && group.trial_currency.trim().length > 0 ? ` ${group.trial_currency}` : ''}`
+                            : 'Не указана'}
+                        </span>
+                      </div>
+                    )}
+
                     <div className="flex items-center gap-2 text-sm">
                       <Clock className="h-4 w-4" />
                       <span>{group.duration_minutes} минут</span>
@@ -517,6 +538,25 @@ export default function TrialPage() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
+              <div className="rounded-md border p-3 text-sm">
+                <div className="font-medium">Дата и время</div>
+                <div className="text-muted-foreground">
+                  {(selectedGroup?.schedule && selectedGroup.schedule !== 'Не назначено')
+                    ? selectedGroup.schedule
+                    : 'Расписание уточняется — администратор сообщит время'}
+                </div>
+              </div>
+
+              {selectedGroup?.is_trial && (
+                <div className="rounded-md border p-3 text-sm">
+                  <div className="font-medium">Цена</div>
+                  <div className="text-muted-foreground">
+                    {typeof selectedGroup.trial_price === 'number'
+                      ? `${selectedGroup.trial_price}${typeof selectedGroup.trial_currency === 'string' && selectedGroup.trial_currency.trim().length > 0 ? ` ${selectedGroup.trial_currency}` : ''}`
+                      : 'Не указана'}
+                  </div>
+                </div>
+              )}
               <p className="text-sm text-muted-foreground">
                 Вы уверены, что хотите записаться на пробный урок?
                 После подтверждения один из ваших пробных уроков будет использован.

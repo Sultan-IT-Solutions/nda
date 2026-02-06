@@ -86,13 +86,13 @@ export default function MyGroupsPage() {
         const groupsData = await API.students.getMyGroups()
 
         const transformed = (groupsData.groups || []).map((group: any, index: number) => {
-          const badges = ["Обычный", "Пробный", "Занятие перенесено"]
           const colors = [
             { badge: "bg-pink-500", border: "border-pink-500" },
             { badge: "bg-purple-500", border: "border-purple-500" },
             { badge: "bg-orange-500", border: "border-orange-500" },
           ]
-          const colorSet = colors[index % colors.length]
+          const isTrial = Boolean(group.is_trial)
+          const colorSet = isTrial ? colors[1] : colors[0]
 
           let schedule = group.schedule || "Не указано";
           if (schedule === "Не назначено") {
@@ -105,7 +105,7 @@ export default function MyGroupsPage() {
             teacher_name: group.teacher_name || "Не назначен",
             schedule: schedule,
             hall: group.hall_name || "Не указано",
-            badge: badges[index % badges.length],
+            badge: isTrial ? "Пробный" : "Регулярный",
             badgeColor: colorSet.badge,
             borderColor: colorSet.border,
           }
@@ -233,11 +233,11 @@ export default function MyGroupsPage() {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Ваши группы</h1>
+          <h1 data-tour="my-groups-title" className="text-3xl font-bold text-foreground mb-2">Ваши группы</h1>
           <p className="text-sm text-muted-foreground">Найдено {enrolledGroups.length} группы</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div data-tour="my-groups-list" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {enrolledGroups.map((group) => (
             <Card
               key={group.id}

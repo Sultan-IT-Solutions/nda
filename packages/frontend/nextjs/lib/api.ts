@@ -276,8 +276,24 @@ export const API = {
   },
 
   users: {
-    me: () => apiRequest('/users/me'),
-    meOptional: () => apiRequestOptionalAuth('/users/me'),
+    me: async () => {
+      const data = await apiRequest('/users/me')
+      const user = (data as any)?.user
+      if (!user || typeof user?.role !== 'string') {
+        emitAuthRequired(AUTH_REQUIRED_MESSAGE)
+        const err: any = new Error(AUTH_REQUIRED_MESSAGE)
+        err.status = 401
+        throw err
+      }
+      return data
+    },
+    meOptional: async () => {
+      const data = await apiRequestOptionalAuth('/users/me')
+      if (data == null) return null
+      const user = (data as any)?.user
+      if (!user || typeof user?.role !== 'string') return null
+      return data
+    },
     getById: (id: number) => apiRequest(`/users/${id}`),
     getAll: () => apiRequest('/admin/users'),
     update: (userId: number, data: { name?: string; email?: string; phone?: string; role?: string }) =>

@@ -163,6 +163,7 @@ export function NotificationBell({ accentColor = "bg-red-500" }: NotificationBel
           variant="ghost"
           size="icon"
           className="relative"
+          data-tour="notifications"
         >
           <Bell size={20} />
           {unreadCount > 0 && (

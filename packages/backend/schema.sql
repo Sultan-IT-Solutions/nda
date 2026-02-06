@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- Students table (extended student info)
 CREATE TABLE IF NOT EXISTS students (
+    trial_currency TEXT,
     id SERIAL PRIMARY KEY,
     user_id INTEGER UNIQUE REFERENCES users(id) ON DELETE CASCADE,
     phone_number VARCHAR(50),
@@ -63,6 +64,7 @@ CREATE TABLE IF NOT EXISTS groups (
     class_name VARCHAR(255),
     direction VARCHAR(255),
     is_trial BOOLEAN DEFAULT FALSE,
+    trial_price INTEGER,
     is_closed BOOLEAN DEFAULT FALSE,
     is_additional BOOLEAN DEFAULT FALSE,
     start_date DATE,

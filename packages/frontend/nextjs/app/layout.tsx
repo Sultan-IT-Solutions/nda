@@ -1,7 +1,10 @@
+import { Suspense } from 'react'
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { GlobalToaster } from '@/components/global-toaster'
+import { AuthRequiredRedirect } from '@/components/auth-required-redirect'
+import { OnboardingTour } from '@/components/onboarding-tour'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -22,6 +25,10 @@ export default function RootLayout({
     <html lang="en">
       <body className={`font-sans antialiased`}>
         <GlobalToaster />
+        <AuthRequiredRedirect />
+        <Suspense fallback={null}>
+          <OnboardingTour />
+        </Suspense>
         {children}
         <Analytics />
       </body>

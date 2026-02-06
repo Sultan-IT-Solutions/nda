@@ -2,13 +2,20 @@
 
 import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { SignOut, User, MapPin, Clock } from "@phosphor-icons/react"
+import { SignOut, User, MapPin, Clock, CalendarBlank, Tag } from "@phosphor-icons/react"
 import { NotificationBell } from "@/components/notification-bell"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { toast } from 'sonner'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,6 +49,10 @@ interface GroupData {
   start_time: string | null
   duration_minutes: number
   is_trial: boolean
+  trial_price?: number | null
+  trial_currency?: string | null
+  schedule?: string
+  upcoming_lessons?: string[]
   hall: {
     id: number
     name: string
@@ -71,6 +82,12 @@ interface ScheduleGroup {
   isAvailable: boolean
   isTrial: boolean
   isRescheduled: boolean
+  startTime: string | null
+  upcomingLessons?: string[]
+  trialPrice?: number | null
+  trialCurrency?: string | null
+  durationMinutes: number
+  freeSlots: number | null
 }
 
 export default function SchedulePage() {
@@ -82,6 +99,9 @@ export default function SchedulePage() {
   const [groups, setGroups] = useState<ScheduleGroup[]>([])
   const [filteredGroups, setFilteredGroups] = useState<ScheduleGroup[]>([])
   const [filters, setFilters] = useState<FilterData>({ teachers: [], halls: [] })
+
+  const [selectedGroup, setSelectedGroup] = useState<ScheduleGroup | null>(null)
+  const [enrolling, setEnrolling] = useState(false)
 
   const [selectedTeacher, setSelectedTeacher] = useState<string>("all")
   const [selectedHall, setSelectedHall] = useState<string>("all")
@@ -115,6 +135,70 @@ export default function SchedulePage() {
     }
   }
 
+  const formatStartTime = (value: string | null): string | null => {
+    if (!value) return null
+    const d = new Date(value)
+    if (Number.isNaN(d.getTime())) return null
+    return new Intl.DateTimeFormat("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(d)
+  }
+
+  const formatLessonPretty = (value: string | null): string | null => {
+    if (!value) return null
+    const d = new Date(value)
+    if (Number.isNaN(d.getTime())) return null
+
+    const weekdayRaw = new Intl.DateTimeFormat("ru-RU", { weekday: "short" }).format(d)
+    const weekday = weekdayRaw.replace(/\.$/, "")
+    const weekdayCapitalized = weekday.length > 0 ? weekday[0].toUpperCase() + weekday.slice(1) : weekday
+
+    const dateRaw = new Intl.DateTimeFormat("ru-RU", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    }).format(d)
+    const date = dateRaw.replace(/\s?г\.?$/, "")
+
+    const time = new Intl.DateTimeFormat("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(d)
+
+    return `${weekdayCapitalized} · ${date} · ${time}`
+  }
+
+  const openGroupDetails = (group: ScheduleGroup) => {
+    setSelectedGroup(group)
+  }
+
+  const confirmEnroll = async () => {
+    if (!selectedGroup) return
+    setEnrolling(true)
+    try {
+      await handleEnroll(selectedGroup.id, selectedGroup.name, selectedGroup.isTrial)
+      setSelectedGroup(null)
+    } finally {
+      setEnrolling(false)
+    }
+  }
+
+  const getGroupHour = (group: ScheduleGroup): number | null => {
+    if (group.startTime) {
+      const d = new Date(group.startTime)
+      const hour = d.getHours()
+      if (!Number.isNaN(hour)) return hour
+    }
+    const match = group.schedule.match(/\b(\d{1,2}):(\d{2})\b/)
+    if (!match) return null
+    const hour = parseInt(match[1], 10)
+    return Number.isFinite(hour) ? hour : null
+  }
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -126,28 +210,42 @@ export default function SchedulePage() {
           return
         }
 
-        try {
-          const filtersData = await API.groups.getAvailable()
-          setFilters({ teachers: [], halls: [] })
-        } catch (err) {
-          }
-
         const groupsData = await API.groups.getAvailable()
 
-        const transformed = groupsData.map((group: GroupData, index: number) => {
+        const teachersSet = new Set<string>()
+        const hallsSet = new Set<string>()
+
+        for (const group of groupsData as GroupData[]) {
+          for (const name of group.teacher_names || []) {
+            if (name) teachersSet.add(name)
+          }
+          if (group.hall?.name) hallsSet.add(group.hall.name)
+        }
+
+        setFilters({
+          teachers: Array.from(teachersSet).sort().map((name, idx) => ({ id: idx + 1, name })),
+          halls: Array.from(hallsSet).sort().map((name, idx) => ({ id: idx + 1, name })),
+        })
+
+        const transformed = (groupsData as GroupData[]).map((group: GroupData, index: number) => {
 
           const badgeType = group.is_trial
             ? { name: "Пробный", color: "bg-purple-100 text-purple-700", border: "border-purple-300", bg: "bg-purple-50/30", type: "trial" }
-            : { name: "Обычный", color: "bg-gray-100 text-gray-700", border: "border-gray-300", bg: "bg-white", type: "regular" }
+            : { name: "Регулярный", color: "bg-gray-100 text-gray-700", border: "border-gray-300", bg: "bg-white", type: "regular" }
 
           const isHighlighted = group.is_trial
 
-          const schedule = (group as any).schedule || "Не назначено";
+          const schedule = (group as any).schedule || "Не указано";
+          const upcomingLessons = Array.isArray((group as any).upcoming_lessons)
+            ? ((group as any).upcoming_lessons as string[]).filter((v) => typeof v === 'string' && v.trim().length > 0)
+            : []
+
+          const startTime = group.start_time ?? (upcomingLessons.length > 0 ? upcomingLessons[0] : null)
 
           return {
             id: group.id,
             name: group.name || "Без названия",
-            teacher_name: group.teacher_names?.length > 0 ? group.teacher_names.join(", ") : "Преподаватель не назначен",
+            teacher_name: group.teacher_names?.length > 0 ? group.teacher_names.join(", ") : "Не назначен",
             schedule: schedule,
             hall: group.hall ? group.hall.name : "Не назначен",
             badge: badgeType.name,
@@ -156,7 +254,13 @@ export default function SchedulePage() {
             bgColor: badgeType.bg,
             isAvailable: (group.free_slots === null || group.free_slots > 0),
             isTrial: group.is_trial,
+            trialPrice: typeof group.trial_price === 'number' ? group.trial_price : null,
+            trialCurrency: typeof group.trial_currency === 'string' ? group.trial_currency : null,
             isRescheduled: false,
+            startTime,
+            upcomingLessons,
+            durationMinutes: group.duration_minutes,
+            freeSlots: group.free_slots,
           }
         })
 
@@ -193,6 +297,17 @@ export default function SchedulePage() {
 
     if (selectedType && selectedType !== "all") {
       filtered = filtered.filter(g => g.badge === selectedType)
+    }
+
+    if (selectedTime && selectedTime !== "all") {
+      filtered = filtered.filter((g) => {
+        const hour = getGroupHour(g)
+        if (hour === null) return true
+        if (selectedTime === 'morning') return hour >= 10 && hour < 12
+        if (selectedTime === 'afternoon') return hour >= 12 && hour < 18
+        if (selectedTime === 'evening') return hour >= 18 && hour < 22
+        return true
+      })
     }
 
     setFilteredGroups(filtered)
@@ -302,11 +417,11 @@ export default function SchedulePage() {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="mb-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
+          <div data-tour="schedule-filters" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="flex flex-col gap-2">
               <label className="text-sm font-medium text-foreground mb-2 block">Преподаватели</label>
               <Select value={selectedTeacher} onValueChange={setSelectedTeacher}>
-                <SelectTrigger className="bg-white border-gray-200 h-11">
+                <SelectTrigger className="bg-white border-gray-200 h-11 w-full">
                   <SelectValue placeholder="Выбрать" />
                 </SelectTrigger>
                 <SelectContent className="bg-white">
@@ -320,10 +435,10 @@ export default function SchedulePage() {
               </Select>
             </div>
 
-            <div>
+            <div className="flex flex-col gap-2">
               <label className="text-sm font-medium text-foreground mb-2 block">Залы</label>
               <Select value={selectedHall} onValueChange={setSelectedHall}>
-                <SelectTrigger className="bg-white border-gray-200 h-11">
+                <SelectTrigger className="bg-white border-gray-200 h-11 w-full">
                   <SelectValue placeholder="Выбрать" />
                 </SelectTrigger>
                 <SelectContent className="bg-white">
@@ -337,10 +452,10 @@ export default function SchedulePage() {
               </Select>
             </div>
 
-            <div>
+            <div className="flex flex-col gap-2">
               <label className="text-sm font-medium text-foreground mb-2 block">Время</label>
               <Select value={selectedTime} onValueChange={setSelectedTime}>
-                <SelectTrigger className="bg-white border-gray-200 h-11">
+                <SelectTrigger className="bg-white border-gray-200 h-11 w-full">
                   <SelectValue placeholder="Выбрать" />
                 </SelectTrigger>
                 <SelectContent className="bg-white">
@@ -352,15 +467,15 @@ export default function SchedulePage() {
               </Select>
             </div>
 
-            <div>
+            <div className="flex flex-col gap-2">
               <label className="text-sm font-medium text-foreground mb-2 block">Тип</label>
               <Select value={selectedType} onValueChange={setSelectedType}>
-                <SelectTrigger className="bg-white border-gray-200 h-11">
+                <SelectTrigger className="bg-white border-gray-200 h-11 w-full">
                   <SelectValue placeholder="Выбрать" />
                 </SelectTrigger>
                 <SelectContent className="bg-white">
                   <SelectItem value="all">Выбрать</SelectItem>
-                  <SelectItem value="Обычный">Обычный</SelectItem>
+                  <SelectItem value="Регулярный">Регулярный</SelectItem>
                   <SelectItem value="Пробный">Пробный</SelectItem>
                   <SelectItem value="Рекомендованный">Рекомендованный</SelectItem>
                 </SelectContent>
@@ -371,11 +486,12 @@ export default function SchedulePage() {
           <p className="text-sm text-muted-foreground mt-4">Найдено {filteredGroups.length} групп</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div data-tour="schedule-cards" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredGroups.map((group) => (
             <Card
               key={group.id}
-              className={`p-6 border ${group.borderColor} hover:shadow-lg transition-all ${group.bgColor} relative overflow-hidden`}
+              onClick={() => openGroupDetails(group)}
+              className={`p-6 border ${group.borderColor} hover:shadow-lg transition-all ${group.bgColor} relative overflow-hidden cursor-pointer`}
             >
               <div className="absolute top-4 right-4">
                 <div className={`w-3 h-3 rounded-full ${group.isAvailable ? 'bg-green-500' : 'bg-gray-300'}`} />
@@ -406,25 +522,29 @@ export default function SchedulePage() {
                     <div className="font-medium text-foreground">Зал: {group.hall}</div>
                   </div>
                 </div>
+
+                <div className="flex items-start gap-3">
+                  <div className="p-1.5 rounded-lg bg-primary/10">
+                    <Clock size={14} className="text-primary" weight="duotone" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-medium text-foreground">Длительность: {group.durationMinutes} мин</div>
+                  </div>
+                </div>
               </div>
 
-              {group.isTrial ? (
+              <div className="mt-2">
                 <Button
-                  onClick={() => handleEnroll(group.id, group.name, true)}
-                  className="w-full bg-gradient-to-br from-purple-600 to-purple-500 hover:from-purple-700 hover:to-purple-600 text-white font-medium"
-                  disabled={!group.isAvailable}
+                  variant="outline"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    openGroupDetails(group)
+                  }}
+                  className="w-full"
                 >
-                  Пробный урок
+                  Просмотреть расписание
                 </Button>
-              ) : (
-                <Button
-                  onClick={() => handleEnroll(group.id, group.name, false)}
-                  className="w-full bg-gradient-to-br from-purple-600 to-purple-500 hover:from-purple-700 hover:to-purple-600 text-white font-medium"
-                  disabled={!group.isAvailable}
-                >
-                  Записаться
-                </Button>
-              )}
+              </div>
             </Card>
           ))}
         </div>
@@ -435,6 +555,92 @@ export default function SchedulePage() {
           </div>
         )}
       </main>
+
+      <Dialog open={selectedGroup !== null} onOpenChange={(open) => !open && setSelectedGroup(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{selectedGroup?.name}</DialogTitle>
+            <DialogDescription>
+              {selectedGroup?.isTrial ? 'Пробный урок' : 'Запись в группу'}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedGroup && (
+            <div className="space-y-3 text-sm">
+              <div className="flex items-start gap-3">
+                <User size={16} className="text-primary" weight="duotone" />
+                <div className="flex-1">
+                  <div className="text-xs text-muted-foreground">Преподаватель</div>
+                  <div className="font-medium text-foreground">{selectedGroup.teacher_name}</div>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <MapPin size={16} className="text-primary" weight="duotone" />
+                <div className="flex-1">
+                  <div className="text-xs text-muted-foreground">Зал</div>
+                  <div className="font-medium text-foreground">{selectedGroup.hall}</div>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <CalendarBlank size={16} className="text-primary" weight="duotone" />
+                <div className="flex-1">
+                  <div className="text-xs text-muted-foreground">Расписание</div>
+                  <div className="font-medium text-foreground">
+                    {(selectedGroup.upcomingLessons?.length ?? 0) > 0 ? (
+                      <div className="space-y-1">
+                        {(selectedGroup.upcomingLessons ?? []).map((t) => (
+                          <div key={t}>{formatLessonPretty(t) ?? formatStartTime(t) ?? t}</div>
+                        ))}
+                      </div>
+                    ) : (
+                      formatLessonPretty(selectedGroup.startTime) ??
+                      formatStartTime(selectedGroup.startTime) ??
+                      selectedGroup.schedule ??
+                      "Не указано"
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {selectedGroup.isTrial && (
+                <div className="flex items-start gap-3">
+                  <Tag size={16} className="text-primary" weight="duotone" />
+                  <div className="flex-1">
+                    <div className="text-xs text-muted-foreground">Цена пробного урока</div>
+                    <div className="font-medium text-foreground">
+                      {typeof selectedGroup.trialPrice === 'number'
+                        ? `${selectedGroup.trialPrice}${selectedGroup.trialCurrency ? ` ${selectedGroup.trialCurrency}` : ''}`
+                        : 'Не указана'}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-start gap-3">
+                <Clock size={16} className="text-primary" weight="duotone" />
+                <div className="flex-1">
+                  <div className="text-xs text-muted-foreground">Длительность</div>
+                  <div className="font-medium text-foreground">{selectedGroup.durationMinutes} минут</div>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <Button
+                  className="w-full bg-gradient-to-br from-purple-600 to-purple-500 hover:from-purple-700 hover:to-purple-600 text-white font-medium"
+                  onClick={confirmEnroll}
+                  disabled={!selectedGroup.isAvailable || enrolling}
+                >
+                  {selectedGroup.isTrial ? 'Записаться на пробный урок' : 'Записаться'}
+                </Button>
+                {!selectedGroup.isAvailable && (
+                  <p className="text-xs text-muted-foreground mt-2">Нет свободных мест</p>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

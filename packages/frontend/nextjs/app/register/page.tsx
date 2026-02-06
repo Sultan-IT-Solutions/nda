@@ -51,7 +51,18 @@ export default function RegisterPage() {
       })
 
       toast.success("Регистрация успешна!")
-      router.push("/login")
+
+      try {
+        await API.auth.login(formData.email, formData.password)
+        try {
+          window.sessionStorage.setItem("nda_start_tour", "1")
+        } catch {
+          // ignore
+        }
+        router.push("/profile?welcome=1&tour=1")
+      } catch (loginErr) {
+        router.push("/login")
+      }
     } catch (err) {
       const anyErr = err as any
       if (anyErr?.errors && typeof anyErr.errors === 'object') {
