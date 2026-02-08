@@ -3,7 +3,7 @@ from pydantic import BaseModel, field_validator
 from typing import Optional, List, Union
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
-from app.database import get_connection
+from app.database import get_connection, ensure_trial_lesson_schema
 from app.auth import require_admin, require_admin_or_teacher
 router = APIRouter(prefix="/admin", tags=["Admin"])
 ALMATY_TZ = ZoneInfo("Asia/Almaty")
@@ -972,7 +972,6 @@ async def get_group_details(group_id: int, user: dict = Depends(require_admin)):
         max_points_marked = marked_lessons * 2
         attendance_percentage = round((total_points / max_points_marked * 100), 1) if max_points_marked > 0 else 0
         is_trial_enrollment = bool(s["enrollment_is_trial"]) if s["enrollment_is_trial"] is not None else False
-        # Trial enrollment has exactly one chosen lesson => max points is 2.
         max_points_total = 2 if is_trial_enrollment else total_lessons_in_group * 2
         students.append({
             "id": s["id"],
@@ -1668,6 +1667,7 @@ async def delete_student(student_id: int, user: dict = Depends(require_admin)):
 @router.get("/trial-lessons/students")
 async def get_trial_lessons_students(user: dict = Depends(require_admin)):
     pool = await get_connection()
+    await ensure_trial_lesson_schema(pool)
     rows = await pool.fetch(
         """
         SELECT
@@ -1703,6 +1703,7 @@ async def get_trial_lessons_students(user: dict = Depends(require_admin)):
 @router.post("/trial-lessons/students/{student_id}/adjust")
 async def adjust_student_trial_lessons(student_id: int, data: AdjustTrialLessonsRequest, user: dict = Depends(require_admin)):
     pool = await get_connection()
+    await ensure_trial_lesson_schema(pool)
     async with pool.acquire() as conn:
         async with conn.transaction():
             row = await conn.fetchrow(
@@ -1768,6 +1769,7 @@ async def adjust_student_trial_lessons(student_id: int, data: AdjustTrialLessons
 @router.get("/trial-lessons/students/{student_id}/history")
 async def get_student_trial_lessons_history(student_id: int, user: dict = Depends(require_admin)):
     pool = await get_connection()
+    await ensure_trial_lesson_schema(pool)
     rows = await pool.fetch(
         """
         SELECT
@@ -2805,7 +2807,6 @@ async def get_group_lessons_for_attendance(group_id: int, user: dict = Depends(r
         attendance_dict = {record['student_id']: record['status'] for record in attendance_records}
         student_attendance = []
 
-        # Apply per-lesson visibility rule for trial students.
         for student in all_students:
             is_trial = bool(student["is_trial"])
             chosen_trial_time = student["chosen_trial_time"]
@@ -2834,7 +2835,6 @@ async def get_group_lessons_for_attendance(group_id: int, user: dict = Depends(r
                 "status": attendance_dict.get(student["id"])
             })
 
-        # De-duplicate (in case a student appears in both sources).
         seen_ids = set()
         student_attendance = [
             s for s in student_attendance
@@ -2988,7 +2988,6 @@ async def get_lesson_attendance(
             "recorded_at": row["recorded_at"].isoformat() if row["recorded_at"] else None
         })
 
-    # De-duplicate by student id (safety).
     seen_ids = set()
     students_data = [
         s for s in students_data
