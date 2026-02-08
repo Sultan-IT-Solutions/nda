@@ -5,5 +5,9 @@
       "src": "api/**/*.py",
       "use": "@vercel/python"
     }
+  ],
+  "routes": [
+    { "src": "^/$", "dest": "/api" },
+    { "src": "/(.*)", "dest": "/api/$1" }
   ]
 }
