@@ -125,6 +125,8 @@ async def get_my_groups(user: dict = Depends(require_student)):
             g.start_date,
             g.recurring_until,
             h.name AS hall_name,
+            gs.is_trial AS enrollment_is_trial,
+            tlu.lesson_start_time AS trial_selected_lesson_start_time,
             (
                 SELECT array_remove(array_agg(DISTINCT u2.name), NULL)
                 FROM group_teachers gt2
@@ -139,6 +141,14 @@ async def get_my_groups(user: dict = Depends(require_student)):
         JOIN groups g ON g.id = gs.group_id
         LEFT JOIN halls h ON h.id = g.hall_id
         LEFT JOIN categories c ON c.id = g.category_id
+        LEFT JOIN LATERAL (
+            SELECT lesson_start_time
+            FROM trial_lesson_usages
+            WHERE student_id = gs.student_id
+              AND group_id = gs.group_id
+            ORDER BY used_at DESC
+            LIMIT 1
+        ) tlu ON TRUE
         WHERE gs.student_id = $1
         ORDER BY g.name
         """,
@@ -164,6 +174,8 @@ async def get_my_groups(user: dict = Depends(require_student)):
             "schedule": schedule,
             "isActive": not r["is_closed"],
             "is_trial": r["is_trial"],
+            "is_trial_enrollment": bool(r["enrollment_is_trial"]) if r.get("enrollment_is_trial") is not None else False,
+            "trial_selected_lesson_start_time": str(r["trial_selected_lesson_start_time"]) if r.get("trial_selected_lesson_start_time") else None,
             "start_date": r["start_date"].strftime("%Y-%m-%d") if r["start_date"] else None,
             "end_date": r["recurring_until"].strftime("%Y-%m-%d") if r["recurring_until"] else None
         })
@@ -194,13 +206,24 @@ async def get_my_attendance(user: dict = Depends(require_student)):
             ar.recorded_at
         FROM lessons l
         JOIN groups g ON g.id = l.group_id
+        JOIN group_students gs ON gs.group_id = g.id AND gs.student_id = $1
+        LEFT JOIN LATERAL (
+            SELECT lesson_start_time
+            FROM trial_lesson_usages
+            WHERE student_id = gs.student_id
+              AND group_id = gs.group_id
+            ORDER BY used_at DESC
+            LIMIT 1
+        ) tlu ON TRUE
         LEFT JOIN categories c ON c.id = g.category_id
         LEFT JOIN halls h ON h.id = l.hall_id
         LEFT JOIN teachers t ON t.id = l.teacher_id
         LEFT JOIN users u ON u.id = t.user_id
         LEFT JOIN attendance_records ar ON ar.lesson_id = l.id AND ar.student_id = $1
-        WHERE g.id IN (
-            SELECT DISTINCT group_id FROM group_students WHERE student_id = $1
+        WHERE (
+            gs.is_trial = FALSE
+            OR tlu.lesson_start_time IS NULL
+            OR l.start_time = tlu.lesson_start_time
         )
         ORDER BY l.start_time DESC
         """,
@@ -228,12 +251,24 @@ async def get_my_attendance(user: dict = Depends(require_student)):
                 END), 0
             ) as total_points
         FROM groups g
+        JOIN group_students gs ON gs.group_id = g.id AND gs.student_id = $1
+        LEFT JOIN LATERAL (
+            SELECT lesson_start_time
+            FROM trial_lesson_usages
+            WHERE student_id = gs.student_id
+              AND group_id = gs.group_id
+            ORDER BY used_at DESC
+            LIMIT 1
+        ) tlu ON TRUE
         LEFT JOIN categories c ON c.id = g.category_id
-        LEFT JOIN lessons l ON l.group_id = g.id
+        LEFT JOIN lessons l
+          ON l.group_id = g.id
+         AND (
+            gs.is_trial = FALSE
+            OR tlu.lesson_start_time IS NULL
+            OR l.start_time = tlu.lesson_start_time
+         )
         LEFT JOIN attendance_records ar ON ar.lesson_id = l.id AND ar.student_id = $1
-        WHERE g.id IN (
-            SELECT DISTINCT group_id FROM group_students WHERE student_id = $1
-        )
         GROUP BY g.id, g.name, c.name
         ORDER BY g.name
         """,

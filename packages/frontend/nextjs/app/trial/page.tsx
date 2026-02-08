@@ -11,6 +11,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -66,6 +67,7 @@ interface Group {
   trial_currency?: string | null;
   schedule?: string | null;
   start_time?: string | null;
+  upcoming_lessons?: string[];
   recurring_days?: string | null;
   hall: {
     id: number;
@@ -100,6 +102,8 @@ export default function TrialPage() {
   const [studentData, setStudentData] = useState<StudentData | null>(null);
   const [availableGroups, setAvailableGroups] = useState<Group[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+  const [selectedTrialLessonTime, setSelectedTrialLessonTime] = useState<string | null>(null);
+  const [submittingBooking, setSubmittingBooking] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [bookingForm, setBookingForm] = useState({
     name: "",
@@ -203,6 +207,32 @@ export default function TrialPage() {
     load();
   }, [router, pathname]);
 
+  const formatLessonPretty = (value: string | null | undefined): string | null => {
+    if (!value) return null;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return null;
+
+    const weekdayRaw = new Intl.DateTimeFormat("ru-RU", { weekday: "short", timeZone: "Asia/Almaty" }).format(d);
+    const weekday = weekdayRaw.replace(/\.$/, "");
+    const weekdayCapitalized = weekday.length > 0 ? weekday[0].toUpperCase() + weekday.slice(1) : weekday;
+
+    const dateRaw = new Intl.DateTimeFormat("ru-RU", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+      timeZone: "Asia/Almaty",
+    }).format(d);
+    const date = dateRaw.replace(/\s?г\.?$/, "");
+
+    const time = new Intl.DateTimeFormat("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Asia/Almaty",
+    }).format(d);
+
+    return `${weekdayCapitalized} · ${date} · ${time}`;
+  };
+
   const handleLogout = () => {
     logout();
     setIsAuth(false);
@@ -234,6 +264,8 @@ export default function TrialPage() {
           }
         }
         setSelectedGroup(group);
+        const times = group.upcoming_lessons ?? [];
+        setSelectedTrialLessonTime(times.length > 0 ? times[0] : null);
       } catch (error) {
         console.error('Error checking trial status:', error);
         toast.error("Не удалось проверить статус пробного урока");
@@ -245,6 +277,13 @@ export default function TrialPage() {
 
   const handleSubmitBooking = async () => {
     if (!selectedGroup) return;
+    if (submittingBooking) return;
+
+    const availableTimes = selectedGroup.upcoming_lessons ?? [];
+    if (availableTimes.length > 0 && !selectedTrialLessonTime) {
+      toast.error("Выберите время пробного урока");
+      return;
+    }
 
     if (studentData && studentData.trials_used >= studentData.trials_allowed) {
       toast.error("Лимит пробных уроков исчерпан");
@@ -252,10 +291,30 @@ export default function TrialPage() {
       return;
     }
 
+    setSubmittingBooking(true);
     try {
-      await API.groups.trial(selectedGroup.id);
+      const bookingResult = await API.groups.trial(selectedGroup.id, selectedTrialLessonTime);
       toast.success("Пробный урок успешно забронирован! Свяжемся с вами в ближайшее время.");
       setSelectedGroup(null);
+      setSelectedTrialLessonTime(null);
+
+      if (
+        bookingResult &&
+        typeof (bookingResult as any).trials_allowed === "number" &&
+        typeof (bookingResult as any).trials_used === "number"
+      ) {
+        setStudentData((prev) =>
+          prev
+            ? {
+                ...prev,
+                trials_allowed: (bookingResult as any).trials_allowed,
+                trials_used: (bookingResult as any).trials_used,
+                trial_used:
+                  (bookingResult as any).trials_used >= (bookingResult as any).trials_allowed,
+              }
+            : prev
+        );
+      }
 
       if (userRole === 'student') {
         const updatedStudentInfo = await API.students.me();
@@ -273,26 +332,32 @@ export default function TrialPage() {
         }
       }
     } catch (error: any) {
-      console.error('Error booking trial:', error);
-
-      if (error.message && error.message.includes("No trial lessons remaining")) {
-        toast.error("Лимит пробных уроков исчерпан");
-        if (userRole === 'student') {
-          try {
-            const refreshedStudentInfo = await API.students.me();
-            setStudentData(refreshedStudentInfo);
-          } catch (refreshError) {
-            console.error('Error refreshing student data:', refreshError);
-          }
-        }
-      } else if (error.message && error.message.includes("Trial lesson already used")) {
-        toast.error("Пробный урок уже использован");
-      } else if (error.message && (error.message.includes("already registered") || error.message.includes("Already registered"))) {
-        toast.error("Вы уже записаны на урок в этой группе");
-      } else {
-        toast.error("Не удалось записаться на пробный урок. Попробуйте еще раз.");
+      const message = handleApiError(error);
+      if (message === AUTH_REQUIRED_MESSAGE) {
+        router.push(buildLoginUrl({ message: DEFAULT_SESSION_EXPIRED_MESSAGE, next: pathname }));
+        return;
       }
+
+      toast.error(message);
+
+      if (
+        userRole === 'student' &&
+        (message.toLowerCase().includes("не осталось") ||
+          message.toLowerCase().includes("лимит") ||
+          message.toLowerCase().includes("пробн"))
+      ) {
+        try {
+          const refreshedStudentInfo = await API.students.me();
+          setStudentData(refreshedStudentInfo);
+        } catch {
+          // ignore
+        }
+      }
+
       setSelectedGroup(null);
+      setSelectedTrialLessonTime(null);
+    } finally {
+      setSubmittingBooking(false);
     }
   };
 
@@ -408,11 +473,11 @@ export default function TrialPage() {
           <div className="flex justify-center items-center gap-6 text-sm text-muted-foreground flex-wrap">
             <div className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-green-500" />
-              <span>Без оплаты заранее — решите после урока</span>
+              <span>Разовый урок — проверьте, подходит ли вам школа</span>
             </div>
             <div className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-green-500" />
-              <span>Понятные объяснения и поддержка</span>
+              <span>Понятное объяснение и поддержка</span>
             </div>
             <div className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-green-500" />
@@ -526,7 +591,13 @@ export default function TrialPage() {
 
 
         {/* Booking Confirmation Dialog */}
-        <Dialog open={selectedGroup !== null} onOpenChange={() => setSelectedGroup(null)}>
+        <Dialog
+          open={selectedGroup !== null}
+          onOpenChange={() => {
+            setSelectedGroup(null);
+            setSelectedTrialLessonTime(null);
+          }}
+        >
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Подтверждение записи на пробный урок</DialogTitle>
@@ -541,9 +612,45 @@ export default function TrialPage() {
               <div className="rounded-md border p-3 text-sm">
                 <div className="font-medium">Дата и время</div>
                 <div className="text-muted-foreground">
-                  {(selectedGroup?.schedule && selectedGroup.schedule !== 'Не назначено')
-                    ? selectedGroup.schedule
-                    : 'Расписание уточняется — администратор сообщит время'}
+                  {(selectedGroup?.upcoming_lessons?.length ?? 0) > 0 ? (
+                    <div className="space-y-2">
+                      <div className="text-xs text-muted-foreground">Выберите одно время</div>
+                      <div className="space-y-2">
+                        {(selectedGroup?.upcoming_lessons ?? []).map((t) => {
+                          const label = formatLessonPretty(t) ?? t;
+                          const checked = selectedTrialLessonTime === t;
+                          return (
+                            <div
+                              key={t}
+                              role="button"
+                              tabIndex={0}
+                              className="w-full flex items-start gap-2 rounded-md border p-2 text-left hover:bg-muted/50 cursor-pointer"
+                              onClick={() => setSelectedTrialLessonTime(checked ? null : t)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  setSelectedTrialLessonTime(checked ? null : t);
+                                }
+                              }}
+                            >
+                              <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={checked}
+                                  onCheckedChange={(v) => setSelectedTrialLessonTime(v ? t : null)}
+                                  aria-label={label}
+                                />
+                              </div>
+                              <div className="text-sm leading-tight">{label}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    (selectedGroup?.schedule && selectedGroup.schedule !== 'Не назначено')
+                      ? selectedGroup.schedule
+                      : 'Расписание еще не сформировано'
+                  )}
                 </div>
               </div>
 
@@ -565,7 +672,14 @@ export default function TrialPage() {
                 <Button variant="outline" onClick={() => setSelectedGroup(null)}>
                   Отмена
                 </Button>
-                <Button onClick={handleSubmitBooking} className="bg-[#FF6B35] hover:bg-[#FF6B35]/90">
+                <Button
+                  onClick={handleSubmitBooking}
+                  className="bg-[#FF6B35] hover:bg-[#FF6B35]/90"
+                  disabled={
+                    submittingBooking ||
+                    ((selectedGroup?.upcoming_lessons?.length ?? 0) > 0 && !selectedTrialLessonTime)
+                  }
+                >
                   Подтвердить запись
                 </Button>
               </div>

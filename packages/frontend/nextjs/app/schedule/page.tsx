@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -102,10 +103,10 @@ export default function SchedulePage() {
 
   const [selectedGroup, setSelectedGroup] = useState<ScheduleGroup | null>(null)
   const [enrolling, setEnrolling] = useState(false)
+  const [selectedTrialLessonTime, setSelectedTrialLessonTime] = useState<string | null>(null)
 
   const [selectedTeacher, setSelectedTeacher] = useState<string>("all")
   const [selectedHall, setSelectedHall] = useState<string>("all")
-  const [selectedTime, setSelectedTime] = useState<string>("all")
   const [selectedType, setSelectedType] = useState<string>("all")
 
   const handleLogout = () => {
@@ -114,10 +115,15 @@ export default function SchedulePage() {
     router.push("/login")
   }
 
-  const handleEnroll = async (groupId: number, groupName: string, isTrial: boolean) => {
+  const handleEnroll = async (
+    groupId: number,
+    groupName: string,
+    isTrial: boolean,
+    trialLessonTime?: string | null
+  ) => {
     try {
       if (isTrial) {
-        await API.groups.trial(groupId)
+        await API.groups.trial(groupId, trialLessonTime ?? null)
         toast.success(`Записаны на пробный урок: ${groupName}`)
       } else {
         await API.groups.join(groupId)
@@ -140,6 +146,7 @@ export default function SchedulePage() {
     const d = new Date(value)
     if (Number.isNaN(d.getTime())) return null
     return new Intl.DateTimeFormat("ru-RU", {
+      timeZone: "Asia/Almaty",
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
@@ -153,7 +160,10 @@ export default function SchedulePage() {
     const d = new Date(value)
     if (Number.isNaN(d.getTime())) return null
 
-    const weekdayRaw = new Intl.DateTimeFormat("ru-RU", { weekday: "short" }).format(d)
+    const weekdayRaw = new Intl.DateTimeFormat("ru-RU", {
+      weekday: "short",
+      timeZone: "Asia/Almaty",
+    }).format(d)
     const weekday = weekdayRaw.replace(/\.$/, "")
     const weekdayCapitalized = weekday.length > 0 ? weekday[0].toUpperCase() + weekday.slice(1) : weekday
 
@@ -161,12 +171,14 @@ export default function SchedulePage() {
       day: "2-digit",
       month: "long",
       year: "numeric",
+      timeZone: "Asia/Almaty",
     }).format(d)
     const date = dateRaw.replace(/\s?г\.?$/, "")
 
     const time = new Intl.DateTimeFormat("ru-RU", {
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: "Asia/Almaty",
     }).format(d)
 
     return `${weekdayCapitalized} · ${date} · ${time}`
@@ -174,29 +186,28 @@ export default function SchedulePage() {
 
   const openGroupDetails = (group: ScheduleGroup) => {
     setSelectedGroup(group)
+    if (group.isTrial) {
+      const times = group.upcomingLessons ?? []
+      setSelectedTrialLessonTime(times.length > 0 ? times[0] : null)
+    } else {
+      setSelectedTrialLessonTime(null)
+    }
   }
 
   const confirmEnroll = async () => {
     if (!selectedGroup) return
     setEnrolling(true)
     try {
-      await handleEnroll(selectedGroup.id, selectedGroup.name, selectedGroup.isTrial)
+      await handleEnroll(
+        selectedGroup.id,
+        selectedGroup.name,
+        selectedGroup.isTrial,
+        selectedGroup.isTrial ? selectedTrialLessonTime : null
+      )
       setSelectedGroup(null)
     } finally {
       setEnrolling(false)
     }
-  }
-
-  const getGroupHour = (group: ScheduleGroup): number | null => {
-    if (group.startTime) {
-      const d = new Date(group.startTime)
-      const hour = d.getHours()
-      if (!Number.isNaN(hour)) return hour
-    }
-    const match = group.schedule.match(/\b(\d{1,2}):(\d{2})\b/)
-    if (!match) return null
-    const hour = parseInt(match[1], 10)
-    return Number.isFinite(hour) ? hour : null
   }
 
   useEffect(() => {
@@ -299,19 +310,8 @@ export default function SchedulePage() {
       filtered = filtered.filter(g => g.badge === selectedType)
     }
 
-    if (selectedTime && selectedTime !== "all") {
-      filtered = filtered.filter((g) => {
-        const hour = getGroupHour(g)
-        if (hour === null) return true
-        if (selectedTime === 'morning') return hour >= 10 && hour < 12
-        if (selectedTime === 'afternoon') return hour >= 12 && hour < 18
-        if (selectedTime === 'evening') return hour >= 18 && hour < 22
-        return true
-      })
-    }
-
     setFilteredGroups(filtered)
-  }, [selectedTeacher, selectedHall, selectedTime, selectedType, groups])
+  }, [selectedTeacher, selectedHall, selectedType, groups])
 
   if (loading) {
     return (
@@ -417,7 +417,7 @@ export default function SchedulePage() {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="mb-8">
-          <div data-tour="schedule-filters" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div data-tour="schedule-filters" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium text-foreground mb-2 block">Преподаватели</label>
               <Select value={selectedTeacher} onValueChange={setSelectedTeacher}>
@@ -453,21 +453,6 @@ export default function SchedulePage() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium text-foreground mb-2 block">Время</label>
-              <Select value={selectedTime} onValueChange={setSelectedTime}>
-                <SelectTrigger className="bg-white border-gray-200 h-11 w-full">
-                  <SelectValue placeholder="Выбрать" />
-                </SelectTrigger>
-                <SelectContent className="bg-white">
-                  <SelectItem value="all">Выбрать</SelectItem>
-                  <SelectItem value="morning">Утро (10:00-12:00)</SelectItem>
-                  <SelectItem value="afternoon">День (12:00-18:00)</SelectItem>
-                  <SelectItem value="evening">Вечер (18:00-22:00)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex flex-col gap-2">
               <label className="text-sm font-medium text-foreground mb-2 block">Тип</label>
               <Select value={selectedType} onValueChange={setSelectedType}>
                 <SelectTrigger className="bg-white border-gray-200 h-11 w-full">
@@ -477,7 +462,6 @@ export default function SchedulePage() {
                   <SelectItem value="all">Выбрать</SelectItem>
                   <SelectItem value="Регулярный">Регулярный</SelectItem>
                   <SelectItem value="Пробный">Пробный</SelectItem>
-                  <SelectItem value="Рекомендованный">Рекомендованный</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -587,7 +571,44 @@ export default function SchedulePage() {
                 <div className="flex-1">
                   <div className="text-xs text-muted-foreground">Расписание</div>
                   <div className="font-medium text-foreground">
-                    {(selectedGroup.upcomingLessons?.length ?? 0) > 0 ? (
+                    {selectedGroup.isTrial && (selectedGroup.upcomingLessons?.length ?? 0) > 0 ? (
+                      <div className="space-y-2">
+                        <div className="text-xs text-muted-foreground font-normal">Выберите одно время</div>
+                        <div className="space-y-2">
+                          {(selectedGroup.upcomingLessons ?? []).map((t) => {
+                            const label = formatLessonPretty(t) ?? formatStartTime(t) ?? t
+                            const checked = selectedTrialLessonTime === t
+                            return (
+                              <div
+                                key={t}
+                                role="button"
+                                tabIndex={0}
+                                className="w-full flex items-start gap-2 rounded-md border p-2 text-left hover:bg-muted/50 cursor-pointer"
+                                onClick={() => setSelectedTrialLessonTime(checked ? null : t)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault()
+                                    setSelectedTrialLessonTime(checked ? null : t)
+                                  }
+                                }}
+                              >
+                                <div
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => e.stopPropagation()}
+                                >
+                                  <Checkbox
+                                    checked={checked}
+                                    onCheckedChange={(v) => setSelectedTrialLessonTime(v ? t : null)}
+                                    aria-label={label}
+                                  />
+                                </div>
+                                <div className="text-sm leading-tight">{label}</div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ) : (selectedGroup.upcomingLessons?.length ?? 0) > 0 ? (
                       <div className="space-y-1">
                         {(selectedGroup.upcomingLessons ?? []).map((t) => (
                           <div key={t}>{formatLessonPretty(t) ?? formatStartTime(t) ?? t}</div>
@@ -629,7 +650,11 @@ export default function SchedulePage() {
                 <Button
                   className="w-full bg-gradient-to-br from-purple-600 to-purple-500 hover:from-purple-700 hover:to-purple-600 text-white font-medium"
                   onClick={confirmEnroll}
-                  disabled={!selectedGroup.isAvailable || enrolling}
+                  disabled={
+                    !selectedGroup.isAvailable ||
+                    enrolling ||
+                    (selectedGroup.isTrial && (selectedGroup.upcomingLessons?.length ?? 0) > 0 && !selectedTrialLessonTime)
+                  }
                 >
                   {selectedGroup.isTrial ? 'Записаться на пробный урок' : 'Записаться'}
                 </Button>

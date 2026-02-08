@@ -1,10 +1,27 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Body
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 from app.database import get_connection
 from app.auth import require_auth
+from app.notifications import NotificationType, create_notification, notify_admins, notify_teacher_of_group
 router = APIRouter(prefix="/groups", tags=["Groups"])
+
+
+def _parse_iso_datetime(value: str) -> datetime:
+    raw = value.strip()
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    return datetime.fromisoformat(raw)
+
+
+def _format_dt_ru(value: Optional[datetime]) -> str:
+    if not value:
+        return "—"
+    try:
+        return value.strftime("%d.%m.%Y %H:%M")
+    except Exception:
+        return str(value)
 DAY_NAMES_BY_NUM = {
     0: "Вс",
     1: "Пн",
@@ -271,16 +288,63 @@ async def join_group(group_id: int, user: dict = Depends(require_auth)):
         group_id, student_id
     )
     return {"message": "Successfully joined the group"}
+class TrialLessonRequest(BaseModel):
+    lesson_start_time: Optional[str] = None
+
+
 @router.post("/{group_id}/trial")
-async def trial_lesson(group_id: int, user: dict = Depends(require_auth)):
+async def trial_lesson(
+    group_id: int,
+    data: Optional[TrialLessonRequest] = Body(default=None),
+    user: dict = Depends(require_auth),
+):
     if user.get("role") != "student":
         raise HTTPException(status_code=403, detail="Only students may request trial lessons")
     pool = await get_connection()
     student_id = await resolve_student_id(pool, user["id"])
     if not student_id:
         raise HTTPException(status_code=404, detail="Student profile not found")
+
+    requested_dt: Optional[datetime] = None
+    if data and data.lesson_start_time:
+        try:
+            requested_dt = _parse_iso_datetime(data.lesson_start_time)
+        except Exception:
+            raise HTTPException(status_code=422, detail="Некорректное время занятия")
+
+    selected_lesson_id: Optional[int] = None
+    selected_start_time: Optional[datetime] = None
+    group_name: Optional[str] = None
+    updated_trials_allowed: Optional[int] = None
+    updated_trials_used: Optional[int] = None
+
     async with pool.acquire() as conn:
         async with conn.transaction():
+            group_row = await conn.fetchrow("SELECT name FROM groups WHERE id = $1", group_id)
+            if not group_row:
+                raise HTTPException(status_code=404, detail="Группа не найдена")
+            group_name = group_row["name"]
+
+            if requested_dt is not None:
+                lesson_row = await conn.fetchrow(
+                    """
+                    SELECT id, start_time
+                    FROM lessons
+                    WHERE group_id = $1
+                      AND start_time IS NOT NULL
+                      AND start_time = $2
+                      AND start_time >= NOW()
+                      AND COALESCE(is_cancelled, FALSE) = FALSE
+                    LIMIT 1
+                    """,
+                    group_id,
+                    requested_dt,
+                )
+                if not lesson_row:
+                    raise HTTPException(status_code=409, detail="Выбранное время недоступно")
+                selected_lesson_id = lesson_row["id"]
+                selected_start_time = lesson_row["start_time"]
+
             student = await conn.fetchrow(
                 "SELECT trial_used, trials_allowed, trials_used FROM students WHERE id = $1 FOR UPDATE",
                 student_id
@@ -290,7 +354,7 @@ async def trial_lesson(group_id: int, user: dict = Depends(require_auth)):
             trials_used = student["trials_used"]
             trials_allowed = student["trials_allowed"]
             if trials_used >= trials_allowed:
-                raise HTTPException(status_code=409, detail="No trial lessons remaining")
+                raise HTTPException(status_code=409, detail="Не осталось пробных уроков")
             existing = await conn.fetchrow(
                 "SELECT 1 FROM group_students WHERE group_id = $1 AND student_id = $2",
                 group_id, student_id
@@ -306,11 +370,97 @@ async def trial_lesson(group_id: int, user: dict = Depends(require_auth)):
             )
             new_trials_used = trials_used + 1
             trial_used = new_trials_used >= trials_allowed
+            updated_trials_allowed = int(trials_allowed) if trials_allowed is not None else None
+            updated_trials_used = int(new_trials_used)
             await conn.execute(
                 "UPDATE students SET trial_used = $1, trials_used = $2 WHERE id = $3",
                 trial_used, new_trials_used, student_id
             )
-    return {"message": "Trial lesson registered successfully"}
+
+            try:
+                next_lesson = None
+                if selected_start_time is None:
+                    next_lesson = await conn.fetchrow(
+                        """
+                        SELECT id, start_time
+                        FROM lessons
+                        WHERE group_id = $1
+                          AND start_time IS NOT NULL
+                          AND start_time >= NOW()
+                          AND COALESCE(is_cancelled, FALSE) = FALSE
+                        ORDER BY start_time ASC
+                        LIMIT 1
+                        """,
+                        group_id,
+                    )
+
+                if selected_start_time is None and next_lesson:
+                    selected_lesson_id = next_lesson["id"]
+                    selected_start_time = next_lesson["start_time"]
+
+                await conn.execute(
+                    """
+                    INSERT INTO trial_lesson_usages (student_id, group_id, lesson_id, lesson_start_time)
+                    VALUES ($1, $2, $3, $4)
+                    """,
+                    student_id,
+                    group_id,
+                    selected_lesson_id,
+                    selected_start_time,
+                )
+            except Exception:
+                pass
+
+    start_time_text = _format_dt_ru(selected_start_time)
+    student_name = user.get("name") or "Ученик"
+
+    try:
+        await notify_admins(
+            notification_type=NotificationType.SYSTEM,
+            title="Пробный урок: новая запись",
+            message=f"{student_name} записался на пробный урок в группе «{group_name}» на {start_time_text}",
+            group_id=group_id,
+        )
+    except Exception:
+        pass
+
+    try:
+        await notify_teacher_of_group(
+            group_id=group_id,
+            notification_type=NotificationType.SYSTEM,
+            title="Пробный урок: новая запись",
+            message=f"{student_name} записался на пробный урок в группе «{group_name}» на {start_time_text}",
+            related_id=selected_lesson_id,
+            related_type="lesson",
+        )
+    except Exception:
+        pass
+
+    try:
+        await create_notification(
+            user_id=user["id"],
+            student_id=student_id,
+            notification_type=NotificationType.SYSTEM,
+            title="Запись подтверждена",
+            message=f"Вы записаны на пробный урок в группе «{group_name}» на {start_time_text}",
+            group_id=group_id,
+            related_id=selected_lesson_id,
+            related_type="lesson",
+            action_url="/schedule",
+        )
+    except Exception:
+        pass
+
+    trials_remaining = None
+    if updated_trials_allowed is not None and updated_trials_used is not None:
+        trials_remaining = max(0, updated_trials_allowed - updated_trials_used)
+
+    return {
+        "message": "Trial lesson registered successfully",
+        "trials_allowed": updated_trials_allowed,
+        "trials_used": updated_trials_used,
+        "trials_remaining": trials_remaining,
+    }
 class AdditionalLessonRequest(BaseModel):
     reason: Optional[str] = None
 @router.post("/{group_id}/additional-request")

@@ -327,7 +327,11 @@ export const API = {
     getById: (id: number) => apiRequest(`/admin/groups/${id}`),
     getSchedule: (groupId: number) => apiRequest(`/groups/${groupId}/schedule`),
     join: (groupId: number) => apiRequest(`/groups/${groupId}/join`, { method: 'POST' }),
-    trial: (groupId: number) => apiRequest(`/groups/${groupId}/trial`, { method: 'POST' }),
+    trial: (groupId: number, lessonStartTime?: string | null) =>
+      apiRequest(`/groups/${groupId}/trial`, {
+        method: 'POST',
+        ...(lessonStartTime ? { body: JSON.stringify({ lesson_start_time: lessonStartTime }) } : {}),
+      }),
     requestAdditional: (groupId: number, date: string) =>
       apiRequest(`/groups/${groupId}/additional-request`, {
         method: 'POST',
@@ -513,6 +517,15 @@ export const API = {
       apiRequest(`/admin/reschedule-requests/${requestId}/approve`, { method: 'POST' }),
     rejectRescheduleRequest: (requestId: number) =>
       apiRequest(`/admin/reschedule-requests/${requestId}/reject`, { method: 'POST' }),
+
+    getTrialLessonsStudents: () => apiRequest('/admin/trial-lessons/students'),
+    adjustTrialLessons: (studentId: number, delta: number) =>
+      apiRequest(`/admin/trial-lessons/students/${studentId}/adjust`, {
+        method: 'POST',
+        body: JSON.stringify({ delta }),
+      }),
+    getTrialLessonsHistory: (studentId: number) =>
+      apiRequest(`/admin/trial-lessons/students/${studentId}/history`),
   },
 
   categories: {

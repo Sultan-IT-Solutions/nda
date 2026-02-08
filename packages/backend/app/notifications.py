@@ -176,12 +176,24 @@ async def notify_teacher_of_group(
         """
         SELECT u.id as user_id
         FROM groups g
-        JOIN teachers t ON g.teacher_id = t.id
-        JOIN users u ON t.user_id = u.id
+        JOIN group_teachers gt ON gt.group_id = g.id AND COALESCE(gt.is_main, FALSE) = TRUE
+        JOIN teachers t ON t.id = gt.teacher_id
+        JOIN users u ON u.id = t.user_id
         WHERE g.id = $1
         """,
         group_id
     )
+    if not teacher:
+        teacher = await pool.fetchrow(
+            """
+            SELECT u.id as user_id
+            FROM groups g
+            JOIN teachers t ON g.teacher_id = t.id
+            JOIN users u ON t.user_id = u.id
+            WHERE g.id = $1
+            """,
+            group_id
+        )
     if not teacher:
         return None
     return await create_notification(

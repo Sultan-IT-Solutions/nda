@@ -273,18 +273,6 @@ export default function MyGroupsPage() {
               </div>
             </Card>
           ))}
-
-          <Card className="p-6 border-2 border-dashed border-primary/30 hover:border-primary/50 transition-colors cursor-pointer bg-card/50 flex flex-col items-center justify-center min-h-[280px]">
-            <div className="flex flex-col items-center gap-4">
-              <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
-                <Plus size={32} className="text-primary" weight="bold" />
-              </div>
-              <div className="text-center">
-                <h3 className="font-semibold text-foreground mb-1">Добавить Новую Запись</h3>
-                <p className="text-sm text-muted-foreground">Записать на новое занятие</p>
-              </div>
-            </div>
-          </Card>
         </div>
       </main>
     </div>

@@ -18,6 +18,17 @@ import {
 import { Calendar } from "@/components/ui/calendar"
 import { format, parse } from "date-fns"
 import { ru } from "date-fns/locale"
+import { toast } from "sonner"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 interface AttendanceStudent {
   id: number
@@ -48,6 +59,8 @@ export default function AttendanceManager({ groupId, onSave }: AttendanceManager
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState<number | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [lessonToDelete, setLessonToDelete] = useState<LessonWithAttendance | null>(null)
   const [editing, setEditing] = useState<number | null>(null)
   const [editForm, setEditForm] = useState({
     date: '',
@@ -135,8 +148,15 @@ export default function AttendanceManager({ groupId, onSave }: AttendanceManager
     }
   }
 
-  const handleDeleteLesson = async (lessonId: number) => {
-    if (!confirm('Вы уверены, что хотите удалить это занятие?')) return
+  const requestDeleteLesson = (lesson: LessonWithAttendance) => {
+    setLessonToDelete(lesson)
+    setDeleteDialogOpen(true)
+  }
+
+  const confirmDeleteLesson = async () => {
+    if (!lessonToDelete) return
+
+    const lessonId = lessonToDelete.id
 
     setDeleting(lessonId)
     try {
@@ -146,8 +166,12 @@ export default function AttendanceManager({ groupId, onSave }: AttendanceManager
         setSelectedLessonId(null)
         setAttendanceData({})
       }
+      toast.success('Занятие удалено')
+      setDeleteDialogOpen(false)
+      setLessonToDelete(null)
     } catch (error) {
       console.error('Error deleting lesson:', error)
+      toast.error('Не удалось удалить занятие')
     } finally {
       setDeleting(null)
     }
@@ -245,6 +269,38 @@ export default function AttendanceManager({ groupId, onSave }: AttendanceManager
     <div className="space-y-6">
       <div className="space-y-6">
         <h3 className="text-lg font-semibold">Занятия</h3>
+
+        <AlertDialog
+          open={deleteDialogOpen}
+          onOpenChange={(open) => {
+            setDeleteDialogOpen(open)
+            if (!open) setLessonToDelete(null)
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Удалить занятие?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {lessonToDelete
+                  ? `Вы уверены, что хотите удалить занятие "${lessonToDelete.class_name}"? Это действие необратимо.`
+                  : "Вы уверены, что хотите удалить это занятие? Это действие необратимо."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={lessonToDelete ? deleting === lessonToDelete.id : false}>
+                Отмена
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={confirmDeleteLesson}
+                disabled={lessonToDelete ? deleting === lessonToDelete.id : false}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                {lessonToDelete && deleting === lessonToDelete.id ? "Удаление..." : "Удалить"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
         {lessons.map((lesson) => {
 
           const startTime = new Date(lesson.start_time)
@@ -301,7 +357,7 @@ export default function AttendanceManager({ groupId, onSave }: AttendanceManager
                       size="sm"
                       title="Delete Lesson"
                       className="text-red-600 hover:text-red-700 hover:border-red-300"
-                      onClick={() => handleDeleteLesson(lesson.id)}
+                      onClick={() => requestDeleteLesson(lesson)}
                       disabled={deleting === lesson.id}
                     >
                       <Trash2 className="w-4 h-4" />

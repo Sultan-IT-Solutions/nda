@@ -52,6 +52,22 @@ async def lifespan(app: FastAPI):
                 async with pool.acquire() as conn:
                     await conn.execute("ALTER TABLE groups ADD COLUMN IF NOT EXISTS trial_price INTEGER")
                     await conn.execute("ALTER TABLE groups ADD COLUMN IF NOT EXISTS trial_currency TEXT")
+                    await conn.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS trials_allowed INTEGER DEFAULT 1")
+                    await conn.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS trials_used INTEGER DEFAULT 0")
+                    await conn.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS trial_lesson_usages (
+                            id SERIAL PRIMARY KEY,
+                            student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+                            group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL,
+                            lesson_id INTEGER REFERENCES lessons(id) ON DELETE SET NULL,
+                            lesson_start_time TIMESTAMP,
+                            used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                        """
+                    )
+                    await conn.execute("CREATE INDEX IF NOT EXISTS idx_trial_usages_student_id ON trial_lesson_usages(student_id)")
+                    await conn.execute("CREATE INDEX IF NOT EXISTS idx_trial_usages_used_at ON trial_lesson_usages(used_at)")
                 print("DB migration ensured: groups.trial_price")
             except Exception:
                 traceback.print_exc()

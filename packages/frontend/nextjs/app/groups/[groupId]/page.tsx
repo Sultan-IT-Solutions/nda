@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { usePathname, useRouter, useParams } from "next/navigation"
-import { ArrowLeft, Users, Calendar, MapPin, Clock, Plus, PencilSimple, Trash, X, Tag } from "@phosphor-icons/react"
+import { ArrowLeft, Users, Calendar, MapPin, Clock, Plus, PencilSimple, Trash, X, Tag, Lock, LockOpen } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -66,6 +66,8 @@ interface Student {
   attendance_percentage: number
   total_points?: number
   max_points?: number
+  is_trial_enrollment?: boolean
+  trial_selected_lesson_start_time?: string | null
 }
 
 interface Hall {
@@ -432,7 +434,7 @@ export default function GroupDetailPage() {
 
       await API.admin.createGroupLessons(groupId, scheduleData)
 
-      toast.success("Расписание добавлено")
+      toast.success("Занятие создано")
       setShowScheduleDialog(false)
       setScheduleForm({ date: '', start_time: '15:00', end_time: '16:00', repeat_enabled: false, repeat_frequency: 'weekly', repeat_until: '' })
       fetchGroupDetails()
@@ -474,15 +476,42 @@ export default function GroupDetailPage() {
 
   const dayNames = ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"]
 
+  const formatTrialSelectedLessonPretty = (value: string | null | undefined): string | null => {
+    if (!value) return null
+    const d = new Date(value)
+    if (Number.isNaN(d.getTime())) return null
+
+    const weekdayRaw = new Intl.DateTimeFormat("ru-RU", { weekday: "short", timeZone: "Asia/Almaty" }).format(d)
+    const weekday = weekdayRaw.replace(/\.$/, "")
+    const weekdayCapitalized = weekday.length > 0 ? weekday[0].toUpperCase() + weekday.slice(1) : weekday
+
+    const dateRaw = new Intl.DateTimeFormat("ru-RU", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+      timeZone: "Asia/Almaty",
+    }).format(d)
+    const date = dateRaw.replace(/\s?г\.?$/, "")
+
+    const time = new Intl.DateTimeFormat("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Asia/Almaty",
+    }).format(d)
+
+    return `${weekdayCapitalized} · ${date} · ${time}`
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex w-full items-start gap-3 sm:w-auto sm:items-center sm:gap-4">
               <Button
                 variant="ghost"
                 onClick={() => router.push("/groups")}
+                size="sm"
                 className="text-gray-600 hover:text-gray-900"
               >
                 <ArrowLeft className="w-5 h-5 mr-2" />
@@ -494,82 +523,108 @@ export default function GroupDetailPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              <Badge
-                className={`${
-                  group.isActive
-                    ? "bg-green-100 text-green-800 border-green-200"
-                    : "bg-red-100 text-red-800 border-red-200"
-                }`}
-              >
-                {group.isActive ? "Активна" : "Закрыта"}
-              </Badge>
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end sm:gap-3">
+              <div className="flex items-center justify-start">
+                <Badge
+                  className={`${
+                    group.isActive
+                      ? "bg-green-100 text-green-800 border-green-200"
+                      : "bg-red-100 text-red-800 border-red-200"
+                  }`}
+                >
+                  {group.isActive ? "Активна" : "Закрыта"}
+                </Badge>
+              </div>
 
               {isEditing ? (
-                <div className="flex gap-2">
-                  <Button onClick={handleSaveChanges} className="bg-green-600 hover:bg-green-700">
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:w-auto sm:gap-2">
+                  <Button
+                    onClick={handleSaveChanges}
+                    size="sm"
+                    className="w-full sm:w-auto bg-green-600 hover:bg-green-700"
+                  >
                     Сохранить
                   </Button>
-                  <Button variant="outline" onClick={() => setIsEditing(false)}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full sm:w-auto"
+                    onClick={() => setIsEditing(false)}
+                  >
                     Отмена
                   </Button>
                 </div>
               ) : (
-                <Button onClick={enterEditMode} variant="outline">
-                  <PencilSimple className="w-4 h-4 mr-2" />
-                  Редактировать
-                </Button>
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3">
+                  <Button onClick={enterEditMode} variant="outline" size="sm" className="w-full sm:w-auto">
+                    <PencilSimple className="w-4 h-4 mr-2" />
+                    Редактировать
+                  </Button>
+
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant={group.isActive ? "secondary" : "default"}
+                        size="sm"
+                        className="w-full sm:w-auto"
+                      >
+                        {group.isActive ? (
+                          <Lock className="w-4 h-4 mr-2" />
+                        ) : (
+                          <LockOpen className="w-4 h-4 mr-2" />
+                        )}
+                        {group.isActive ? "Закрыть группу" : "Открыть группу"}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>
+                          {group.isActive ? "Закрыть группу?" : "Открыть группу?"}
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {group.isActive
+                            ? `Вы уверены, что хотите закрыть группу "${group.name}"? Новые студенты больше не смогут присоединиться в эту группу.`
+                            : `Вы уверены, что хотите открыть группу "${group.name}"? Группа снова станет активной.`
+                          }
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Отмена</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleToggleGroupStatus}>
+                          {group.isActive ? "Закрыть" : "Открыть"}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="w-full sm:w-auto col-span-2 sm:col-span-1"
+                      >
+                        <Trash className="w-4 h-4 mr-2" />
+                        Удалить группу
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Удалить группу?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Вы уверены, что хотите удалить группу "{group.name}"? Это действие необратимо и приведет к удалению всех данных группы, включая студентов и расписание.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Отмена</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleDeleteGroup} className="bg-red-600 hover:bg-red-700">
+                          Удалить
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
               )}
-
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant={group.isActive ? "destructive" : "default"}>
-                    {group.isActive ? "Закрыть группу" : "Открыть группу"}
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>
-                      {group.isActive ? "Закрыть группу?" : "Открыть группу?"}
-                    </AlertDialogTitle>
-                    <AlertDialogDescription>
-                      {group.isActive
-                        ? `Вы уверены, что хотите закрыть группу "${group.name}"? Новые студенты больше не смогут присоединиться в эту группу.`
-                        : `Вы уверены, что хотите открыть группу "${group.name}"? Группа снова станет активной.`
-                      }
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Отмена</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleToggleGroupStatus}>
-                      {group.isActive ? "Закрыть" : "Открыть"}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="destructive">
-                    <Trash className="w-4 h-4 mr-2" />
-                    Удалить группу
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Удалить группу?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Вы уверены, что хотите удалить группу "{group.name}"? Это действие необратимо и приведет к удалению всех данных группы, включая студентов и расписание.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Отмена</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleDeleteGroup} className="bg-red-600 hover:bg-red-700">
-                      Удалить
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
             </div>
           </div>
         </div>
@@ -921,6 +976,9 @@ export default function GroupDetailPage() {
                       <TableRow>
                         <TableHead>Имя</TableHead>
                         <TableHead>Email</TableHead>
+                        {group.is_trial && (
+                          <TableHead>Выбранное время</TableHead>
+                        )}
                         <TableHead>Посещаемость</TableHead>
                         <TableHead className="text-right">Действия</TableHead>
                       </TableRow>
@@ -928,8 +986,25 @@ export default function GroupDetailPage() {
                     <TableBody>
                       {group.students.map((student) => (
                         <TableRow key={student.id}>
-                          <TableCell className="font-medium">{student.name}</TableCell>
+                          <TableCell className="font-medium">
+                            <div className="space-y-1">
+                              <div>{student.name}</div>
+                              {student.is_trial_enrollment && (
+                                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                  <Tag className="w-3 h-3" />
+                                  <span>Пробный</span>
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
                           <TableCell>{student.email}</TableCell>
+                          {group.is_trial && (
+                            <TableCell>
+                              {student.is_trial_enrollment
+                                ? (formatTrialSelectedLessonPretty(student.trial_selected_lesson_start_time) || "—")
+                                : "—"}
+                            </TableCell>
+                          )}
                           <TableCell>
                             <div className="space-y-1">
                               <Badge variant={student.attendance_percentage >= 80 ? "default" : "destructive"}>
@@ -938,7 +1013,9 @@ export default function GroupDetailPage() {
                               {student.max_points !== undefined && student.max_points > 0 && (
                                 <div className="text-xs text-muted-foreground">
                                   <div>Баллов: {student.total_points}/{student.max_points}</div>
-                                  <div>За все занятия: {Math.round((student.total_points || 0) / student.max_points * 100)}%</div>
+                                  <div>
+                                    {student.is_trial_enrollment ? "За выбранный урок" : "За все занятия"}: {Math.round((student.total_points || 0) / student.max_points * 100)}%
+                                  </div>
                                 </div>
                               )}
                             </div>

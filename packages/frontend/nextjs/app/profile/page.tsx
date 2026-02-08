@@ -59,6 +59,8 @@ interface GroupData {
   schedule?: string
   isActive?: boolean
   is_trial?: boolean
+  is_trial_enrollment?: boolean
+  trial_selected_lesson_start_time?: string | null
   start_date?: string | null
   end_date?: string | null
 }
@@ -252,12 +254,54 @@ export default function ProfilePage() {
   const isStudent = user?.role === 'student'
   const isTeacher = user?.role === 'teacher'
 
+  const formatTrialSelectedLessonPretty = (value: string | null | undefined): string | null => {
+    if (!value) return null
+    const d = new Date(value)
+    if (Number.isNaN(d.getTime())) return null
+
+    const weekdayRaw = new Intl.DateTimeFormat("ru-RU", { weekday: "short", timeZone: "Asia/Almaty" }).format(d)
+    const weekday = weekdayRaw.replace(/\.$/, "")
+    const weekdayCapitalized = weekday.length > 0 ? weekday[0].toUpperCase() + weekday.slice(1) : weekday
+
+    const dateRaw = new Intl.DateTimeFormat("ru-RU", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+      timeZone: "Asia/Almaty",
+    }).format(d)
+    const date = dateRaw.replace(/\s?г\.?$/, "")
+
+    const time = new Intl.DateTimeFormat("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Asia/Almaty",
+    }).format(d)
+
+    return `${weekdayCapitalized} · ${date} · ${time}`
+  }
+
   const myGroups = groups.map(group => {
-    let schedule = group.schedule || "Не указано";
+    const trialSelectedPretty =
+      group.is_trial_enrollment && group.trial_selected_lesson_start_time
+        ? formatTrialSelectedLessonPretty(group.trial_selected_lesson_start_time)
+        : null
+
+    let schedule = trialSelectedPretty || group.schedule || "Не указано";
     let dayOfWeek = "Не указано";
     let time = "Не указано";
 
-    if (group.schedule && group.schedule !== "Не назначено") {
+    if (trialSelectedPretty) {
+      const d = new Date(group.trial_selected_lesson_start_time as string)
+      const weekdayRaw = new Intl.DateTimeFormat("ru-RU", { weekday: "short", timeZone: "Asia/Almaty" }).format(d)
+      dayOfWeek = weekdayRaw.replace(/\.$/, "")
+      dayOfWeek = dayOfWeek.length > 0 ? dayOfWeek[0].toUpperCase() + dayOfWeek.slice(1) : dayOfWeek
+
+      time = new Intl.DateTimeFormat("ru-RU", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "Asia/Almaty",
+      }).format(d)
+    } else if (group.schedule && group.schedule !== "Не назначено") {
       try {
 
         const scheduleEntries = group.schedule.split(", ");
@@ -315,7 +359,7 @@ export default function ProfilePage() {
     }
   }
 
-  const subscriptions = (isStudent ? groups.slice(0, 3) : []).map(group => {
+  const subscriptions = (isStudent ? groups : []).map(group => {
 
     const groupLessons = lessonAttendance.filter(lesson => lesson.group_id === group.id)
 
@@ -669,7 +713,7 @@ export default function ProfilePage() {
               </div>
               <h2 className="text-base font-semibold text-foreground">Мои группы</h2>
             </div>
-            {isStudent && subscriptions.length > 0 && (
+            {isStudent && subscriptions.length > subscriptionsPerPage && (
               <div className="flex items-center gap-2">
                 <button
                   onClick={goToPrevSubscriptionPage}
@@ -721,7 +765,11 @@ export default function ProfilePage() {
                       <div className="flex items-center gap-2">
                         <Calendar size={16} className="text-primary" weight="duotone" />
                         <span className="text-muted-foreground text-xs">Расписание:</span>
-                        <div className="font-medium text-foreground">{group.schedule || "Не назначено"}</div>
+                        <div className="font-medium text-foreground">
+                          {(group.is_trial_enrollment && group.trial_selected_lesson_start_time
+                            ? formatTrialSelectedLessonPretty(group.trial_selected_lesson_start_time)
+                            : group.schedule) || "Не назначено"}
+                        </div>
                       </div>
 
                       <div className="flex items-center gap-2">

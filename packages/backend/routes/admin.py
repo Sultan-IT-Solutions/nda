@@ -2,9 +2,31 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, field_validator
 from typing import Optional, List, Union
 from datetime import datetime, time
+from zoneinfo import ZoneInfo
 from app.database import get_connection
 from app.auth import require_admin, require_admin_or_teacher
 router = APIRouter(prefix="/admin", tags=["Admin"])
+ALMATY_TZ = ZoneInfo("Asia/Almaty")
+UTC_TZ = ZoneInfo("UTC")
+
+
+def to_almaty_iso_assume_local(dt: Optional[datetime]) -> Optional[str]:
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ALMATY_TZ)
+    else:
+        dt = dt.astimezone(ALMATY_TZ)
+    return dt.isoformat()
+
+
+def to_almaty_iso_assume_utc(dt: Optional[datetime]) -> Optional[str]:
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC_TZ)
+    dt = dt.astimezone(ALMATY_TZ)
+    return dt.isoformat()
 DAY_NAMES_BY_NUM = {
     0: "Вс",
     1: "Пн",
@@ -200,6 +222,20 @@ class GroupLimitRequest(BaseModel):
 class AddStudentToGroupRequest(BaseModel):
     student_id: int
     is_trial: bool = False
+
+class AdjustTrialLessonsRequest(BaseModel):
+    delta: int
+
+    @field_validator('delta')
+    @classmethod
+    def validate_delta(cls, v):
+        if not isinstance(v, int):
+            raise ValueError('delta must be an integer')
+        if v == 0:
+            raise ValueError('delta must be non-zero')
+        if v < -100 or v > 100:
+            raise ValueError('delta is out of allowed range')
+        return v
 
 class AttendanceRecord(BaseModel):
     student_id: int
@@ -869,23 +905,62 @@ async def get_group_details(group_id: int, user: dict = Depends(require_admin)):
         """
         SELECT
             s.id, u.name, u.email, s.phone_number,
-            COUNT(ar.id) as total_lessons_marked,
-            -- Calculate total points: P=2, E=2, L=1, A=0
-            COALESCE(SUM(
-                CASE ar.status
-                    WHEN 'P' THEN 2
-                    WHEN 'E' THEN 2
-                    WHEN 'L' THEN 1
-                    WHEN 'A' THEN 0
-                    ELSE 0
-                END
-            ), 0) as total_points
+            gs.is_trial AS enrollment_is_trial,
+            tlu.lesson_start_time AS trial_selected_lesson_start_time,
+            CASE
+                WHEN COALESCE(gs.is_trial, FALSE) = TRUE THEN COALESCE(agg_trial.marked, 0)
+                ELSE COALESCE(agg_all.marked, 0)
+            END AS total_lessons_marked,
+            CASE
+                WHEN COALESCE(gs.is_trial, FALSE) = TRUE THEN COALESCE(agg_trial.total_points, 0)
+                ELSE COALESCE(agg_all.total_points, 0)
+            END AS total_points
         FROM group_students gs
         JOIN students s ON s.id = gs.student_id
         JOIN users u ON u.id = s.user_id
-        LEFT JOIN attendance_records ar ON ar.student_id = s.id AND ar.group_id = $1
+        LEFT JOIN LATERAL (
+            SELECT lesson_start_time
+            FROM trial_lesson_usages
+            WHERE student_id = gs.student_id
+              AND group_id = gs.group_id
+            ORDER BY used_at DESC
+            LIMIT 1
+        ) tlu ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT
+                COUNT(ar.id) AS marked,
+                COALESCE(SUM(
+                    CASE ar.status
+                        WHEN 'P' THEN 2
+                        WHEN 'E' THEN 2
+                        WHEN 'L' THEN 1
+                        WHEN 'A' THEN 0
+                        ELSE 0
+                    END
+                ), 0) AS total_points
+            FROM attendance_records ar
+            WHERE ar.student_id = s.id AND ar.group_id = $1
+        ) agg_all ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT
+                COUNT(ar.id) AS marked,
+                COALESCE(SUM(
+                    CASE ar.status
+                        WHEN 'P' THEN 2
+                        WHEN 'E' THEN 2
+                        WHEN 'L' THEN 1
+                        WHEN 'A' THEN 0
+                        ELSE 0
+                    END
+                ), 0) AS total_points
+            FROM attendance_records ar
+            JOIN lessons l ON l.id = ar.lesson_id
+            WHERE ar.student_id = s.id
+              AND ar.group_id = $1
+              AND tlu.lesson_start_time IS NOT NULL
+              AND date_trunc('minute'::text, l.start_time) = date_trunc('minute'::text, tlu.lesson_start_time)
+        ) agg_trial ON TRUE
         WHERE gs.group_id = $1
-        GROUP BY s.id, u.name, u.email, s.phone_number
         ORDER BY u.name
         """,
         group_id
@@ -896,12 +971,16 @@ async def get_group_details(group_id: int, user: dict = Depends(require_admin)):
         marked_lessons = int(s["total_lessons_marked"]) if s["total_lessons_marked"] else 0
         max_points_marked = marked_lessons * 2
         attendance_percentage = round((total_points / max_points_marked * 100), 1) if max_points_marked > 0 else 0
-        max_points_total = total_lessons_in_group * 2
+        is_trial_enrollment = bool(s["enrollment_is_trial"]) if s["enrollment_is_trial"] is not None else False
+        # Trial enrollment has exactly one chosen lesson => max points is 2.
+        max_points_total = 2 if is_trial_enrollment else total_lessons_in_group * 2
         students.append({
             "id": s["id"],
             "name": s["name"],
             "email": s["email"],
             "phone": s["phone_number"] or "",
+            "is_trial_enrollment": is_trial_enrollment,
+            "trial_selected_lesson_start_time": to_almaty_iso_assume_local(s["trial_selected_lesson_start_time"]),
             "attendanceCount": marked_lessons,
             "attendance_percentage": attendance_percentage,
             "total_points": total_points,
@@ -1584,6 +1663,142 @@ async def delete_student(student_id: int, user: dict = Depends(require_admin)):
             await conn.execute("DELETE FROM students WHERE id = $1", student_id)
             await conn.execute("DELETE FROM users WHERE id = $1", user_id)
     return {"message": "Student deleted"}
+
+
+@router.get("/trial-lessons/students")
+async def get_trial_lessons_students(user: dict = Depends(require_admin)):
+    pool = await get_connection()
+    rows = await pool.fetch(
+        """
+        SELECT
+            s.id,
+            u.name,
+            u.email,
+            s.phone_number,
+            COALESCE(s.trials_allowed, 1) AS trials_allowed,
+            COALESCE(s.trials_used, 0) AS trials_used
+        FROM students s
+        JOIN users u ON u.id = s.user_id
+        WHERE u.role = 'student'
+        ORDER BY u.name
+        """
+    )
+    students = []
+    for r in rows:
+        allowed = int(r["trials_allowed"]) if r["trials_allowed"] is not None else 1
+        used = int(r["trials_used"]) if r["trials_used"] is not None else 0
+        remaining = max(0, allowed - used)
+        students.append({
+            "id": r["id"],
+            "name": r["name"],
+            "email": r["email"],
+            "phone_number": r["phone_number"],
+            "trials_allowed": allowed,
+            "trials_used": used,
+            "trials_remaining": remaining,
+        })
+    return {"students": students}
+
+
+@router.post("/trial-lessons/students/{student_id}/adjust")
+async def adjust_student_trial_lessons(student_id: int, data: AdjustTrialLessonsRequest, user: dict = Depends(require_admin)):
+    pool = await get_connection()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """
+                SELECT id, COALESCE(trials_allowed, 1) AS trials_allowed, COALESCE(trials_used, 0) AS trials_used
+                FROM students
+                WHERE id = $1
+                """,
+                student_id
+            )
+            if not row:
+                raise HTTPException(status_code=404, detail="Student not found")
+
+            current_allowed = int(row["trials_allowed"]) if row["trials_allowed"] is not None else 1
+            current_used = int(row["trials_used"]) if row["trials_used"] is not None else 0
+
+            new_allowed = current_allowed + int(data.delta)
+            if new_allowed < current_used:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Нельзя уменьшить лимит ниже уже использованных пробных уроков"
+                )
+            if new_allowed < 0:
+                new_allowed = 0
+
+            await conn.execute(
+                "UPDATE students SET trials_allowed = $1 WHERE id = $2",
+                new_allowed,
+                student_id
+            )
+
+            student = await conn.fetchrow(
+                """
+                SELECT
+                    s.id,
+                    u.name,
+                    u.email,
+                    s.phone_number,
+                    COALESCE(s.trials_allowed, 1) AS trials_allowed,
+                    COALESCE(s.trials_used, 0) AS trials_used
+                FROM students s
+                JOIN users u ON u.id = s.user_id
+                WHERE s.id = $1
+                """,
+                student_id
+            )
+
+    allowed = int(student["trials_allowed"]) if student["trials_allowed"] is not None else 1
+    used = int(student["trials_used"]) if student["trials_used"] is not None else 0
+    return {
+        "student": {
+            "id": student["id"],
+            "name": student["name"],
+            "email": student["email"],
+            "phone_number": student["phone_number"],
+            "trials_allowed": allowed,
+            "trials_used": used,
+            "trials_remaining": max(0, allowed - used),
+        }
+    }
+
+
+@router.get("/trial-lessons/students/{student_id}/history")
+async def get_student_trial_lessons_history(student_id: int, user: dict = Depends(require_admin)):
+    pool = await get_connection()
+    rows = await pool.fetch(
+        """
+        SELECT
+            tlu.id,
+            tlu.used_at,
+            tlu.lesson_start_time,
+            g.name AS group_name,
+            l.class_name AS lesson_name
+        FROM trial_lesson_usages tlu
+        LEFT JOIN groups g ON g.id = tlu.group_id
+        LEFT JOIN lessons l ON l.id = tlu.lesson_id
+        WHERE tlu.student_id = $1
+        ORDER BY tlu.used_at DESC
+        LIMIT 50
+        """,
+        student_id,
+    )
+
+    history = []
+    for r in rows:
+        history.append(
+            {
+                "id": r["id"],
+                "used_at": to_almaty_iso_assume_utc(r["used_at"]),
+                "lesson_start_time": to_almaty_iso_assume_local(r["lesson_start_time"]),
+                "group_name": r["group_name"],
+                "lesson_name": r["lesson_name"],
+            }
+        )
+
+    return {"history": history}
 @router.get("/groups/{group_id}/students")
 async def get_group_students(group_id: int, user: dict = Depends(require_admin)):
     pool = await get_connection()
@@ -2502,14 +2717,61 @@ async def get_group_lessons_for_attendance(group_id: int, user: dict = Depends(r
         WHERE l.group_id = $1
         ORDER BY l.start_time ASC
     """, group_id)
-    students = await pool.fetch("""
-        SELECT s.id, u.name, u.email
+
+   
+    group_students = await pool.fetch(
+        """
+        SELECT
+            s.id,
+            u.name,
+            u.email,
+            COALESCE(gs.is_trial, FALSE) AS is_trial,
+            tlu.lesson_start_time AS chosen_trial_time
         FROM group_students gs
         JOIN students s ON gs.student_id = s.id
         JOIN users u ON s.user_id = u.id
+        LEFT JOIN LATERAL (
+            SELECT lesson_start_time
+            FROM trial_lesson_usages
+            WHERE student_id = gs.student_id AND group_id = gs.group_id
+            ORDER BY used_at DESC
+            LIMIT 1
+        ) tlu ON TRUE
         WHERE gs.group_id = $1
         ORDER BY u.name
-    """, group_id)
+        """,
+        group_id,
+    )
+
+    trial_only_students = await pool.fetch(
+        """
+        WITH latest AS (
+            SELECT DISTINCT ON (student_id)
+                student_id,
+                lesson_start_time
+            FROM trial_lesson_usages
+            WHERE group_id = $1
+            ORDER BY student_id, used_at DESC
+        )
+        SELECT
+            s.id,
+            u.name,
+            u.email,
+            TRUE AS is_trial,
+            latest.lesson_start_time AS chosen_trial_time
+        FROM latest
+        JOIN students s ON s.id = latest.student_id
+        JOIN users u ON u.id = s.user_id
+        WHERE NOT EXISTS (
+            SELECT 1 FROM group_students gs
+            WHERE gs.group_id = $1 AND gs.student_id = latest.student_id
+        )
+        ORDER BY u.name
+        """,
+        group_id,
+    )
+
+    all_students = list(group_students) + list(trial_only_students)
     lesson_ids = [lesson['id'] for lesson in lessons]
     reschedule_requests = {}
     if lesson_ids:
@@ -2542,13 +2804,42 @@ async def get_group_lessons_for_attendance(group_id: int, user: dict = Depends(r
         """, lesson['id'])
         attendance_dict = {record['student_id']: record['status'] for record in attendance_records}
         student_attendance = []
-        for student in students:
+
+        # Apply per-lesson visibility rule for trial students.
+        for student in all_students:
+            is_trial = bool(student["is_trial"])
+            chosen_trial_time = student["chosen_trial_time"]
+
+            if is_trial and chosen_trial_time is not None:
+                lesson_time = lesson["start_time"]
+                if getattr(chosen_trial_time, "tzinfo", None) is not None:
+                    chosen_norm = chosen_trial_time.replace(tzinfo=None)
+                else:
+                    chosen_norm = chosen_trial_time
+                if getattr(lesson_time, "tzinfo", None) is not None:
+                    lesson_norm = lesson_time.replace(tzinfo=None)
+                else:
+                    lesson_norm = lesson_time
+
+                chosen_norm = chosen_norm.replace(second=0, microsecond=0)
+                lesson_norm = lesson_norm.replace(second=0, microsecond=0)
+
+                if chosen_norm != lesson_norm:
+                    continue
+
             student_attendance.append({
                 "id": student["id"],
                 "name": student["name"],
                 "email": student["email"],
                 "status": attendance_dict.get(student["id"])
             })
+
+        # De-duplicate (in case a student appears in both sources).
+        seen_ids = set()
+        student_attendance = [
+            s for s in student_attendance
+            if not (s["id"] in seen_ids or seen_ids.add(s["id"]))
+        ]
         reschedule_info = reschedule_requests.get(lesson["id"])
         lessons_with_attendance.append({
             "id": lesson["id"],
@@ -2607,12 +2898,16 @@ async def get_lesson_attendance(
 ):
     pool = await get_connection()
     lesson = await pool.fetchrow("""
-        SELECT id FROM lessons
+        SELECT id, start_time FROM lessons
         WHERE id = $1 AND group_id = $2
     """, lesson_id, group_id)
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
-    students = await pool.fetch("""
+
+    lesson_start_time = lesson["start_time"]
+
+    students = await pool.fetch(
+        """
         SELECT
             s.id,
             u.name,
@@ -2622,11 +2917,67 @@ async def get_lesson_attendance(
         FROM group_students gs
         JOIN students s ON s.id = gs.student_id
         JOIN users u ON u.id = s.user_id
+        LEFT JOIN LATERAL (
+            SELECT lesson_start_time
+            FROM trial_lesson_usages
+            WHERE student_id = gs.student_id AND group_id = gs.group_id
+            ORDER BY used_at DESC
+            LIMIT 1
+        ) tlu ON TRUE
         LEFT JOIN attendance_records ar ON ar.student_id = s.id
             AND ar.lesson_id = $1
-        WHERE gs.group_id = $2 AND gs.is_trial = FALSE
+        WHERE gs.group_id = $2
+          AND (
+            COALESCE(gs.is_trial, FALSE) = FALSE
+            OR (
+              COALESCE(gs.is_trial, FALSE) = TRUE
+              AND (
+                tlu.lesson_start_time IS NULL
+                                OR date_trunc('minute'::text, tlu.lesson_start_time) = date_trunc('minute'::text, $3::timestamp)
+              )
+            )
+          )
         ORDER BY u.name
-    """, lesson_id, group_id)
+        """,
+        lesson_id,
+        group_id,
+        lesson_start_time,
+    )
+
+    trial_only_students = await pool.fetch(
+        """
+        WITH latest AS (
+            SELECT DISTINCT ON (student_id)
+                student_id,
+                lesson_start_time
+            FROM trial_lesson_usages
+            WHERE group_id = $1
+            ORDER BY student_id, used_at DESC
+        )
+        SELECT
+            s.id,
+            u.name,
+            u.email,
+            ar.status,
+            ar.recorded_at
+        FROM latest
+        JOIN students s ON s.id = latest.student_id
+        JOIN users u ON u.id = s.user_id
+        LEFT JOIN attendance_records ar ON ar.student_id = s.id
+            AND ar.lesson_id = $2
+        WHERE NOT EXISTS (
+            SELECT 1 FROM group_students gs
+            WHERE gs.group_id = $1 AND gs.student_id = latest.student_id
+        )
+                    AND date_trunc('minute'::text, latest.lesson_start_time) = date_trunc('minute'::text, $3::timestamp)
+        ORDER BY u.name
+        """,
+        group_id,
+        lesson_id,
+        lesson_start_time,
+    )
+
+    students = list(students) + list(trial_only_students)
     students_data = []
     for row in students:
         students_data.append({
@@ -2636,6 +2987,13 @@ async def get_lesson_attendance(
             "status": row["status"],
             "recorded_at": row["recorded_at"].isoformat() if row["recorded_at"] else None
         })
+
+    # De-duplicate by student id (safety).
+    seen_ids = set()
+    students_data = [
+        s for s in students_data
+        if not (s["id"] in seen_ids or seen_ids.add(s["id"]))
+    ]
     return {"students": students_data}
 @router.get("/groups/{group_id}/attendance-summary")
 async def get_group_attendance_summary(group_id: int, user: dict = Depends(require_admin)):

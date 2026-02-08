@@ -23,6 +23,7 @@ export const adminNavItems: AdminNavItem[] = [
   { label: "Расписание", icon: CalendarBlank, path: "/analytics/schedule" },
   { label: "Заявки", icon: Clock, path: "/analytics/applications" },
   { label: "Ученики", icon: Users, path: "/analytics/students" },
+  { label: "Пробные уроки", icon: Users, path: "/analytics/trial-lessons" },
   { label: "Пользователи", icon: UserCircle, path: "/analytics/users" },
   { label: "Группы", icon: Users, path: "/groups" },
   { label: "Категории", icon: Tag, path: "/analytics/categories" },

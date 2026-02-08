@@ -330,10 +330,24 @@ async def get_group_students(group_id: int, user: dict = Depends(require_teacher
     rows = await pool.fetch(
         """
         SELECT
-            s.id, u.name, u.email, s.phone_number, gs.is_trial, gs.joined_at
+            s.id,
+            u.name,
+            u.email,
+            s.phone_number,
+            gs.is_trial,
+            gs.joined_at,
+            tlu.lesson_start_time AS trial_selected_lesson_start_time
         FROM group_students gs
         JOIN students s ON s.id = gs.student_id
         JOIN users u ON u.id = s.user_id
+        LEFT JOIN LATERAL (
+            SELECT lesson_start_time
+            FROM trial_lesson_usages
+            WHERE student_id = gs.student_id
+              AND group_id = gs.group_id
+            ORDER BY used_at DESC
+            LIMIT 1
+        ) tlu ON TRUE
         WHERE gs.group_id = $1
         ORDER BY u.name
         """,
@@ -346,7 +360,8 @@ async def get_group_students(group_id: int, user: dict = Depends(require_teacher
             "email": r["email"],
             "phone_number": r["phone_number"],
             "is_trial": r["is_trial"],
-            "joined_at": str(r["joined_at"]) if r["joined_at"] else None
+            "joined_at": str(r["joined_at"]) if r["joined_at"] else None,
+            "trial_selected_lesson_start_time": str(r["trial_selected_lesson_start_time"]) if r.get("trial_selected_lesson_start_time") else None,
         }
         for r in rows
     ]
@@ -1258,6 +1273,21 @@ async def get_teacher_lesson_attendance(group_id: int, lesson_id: int, user: dic
     )
     if not group:
         raise HTTPException(status_code=404, detail="Group not found or access denied")
+
+    lesson = await pool.fetchrow(
+        """
+        SELECT id, start_time
+        FROM lessons
+        WHERE id = $1 AND group_id = $2
+        """,
+        lesson_id,
+        group_id,
+    )
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+
+    lesson_start_time = lesson["start_time"]
+
     students = await pool.fetch(
         """
         SELECT
@@ -1269,13 +1299,70 @@ async def get_teacher_lesson_attendance(group_id: int, lesson_id: int, user: dic
         FROM group_students gs
         JOIN students s ON s.id = gs.student_id
         JOIN users u ON u.id = s.user_id
-        LEFT JOIN attendance_records ar ON ar.student_id = s.id AND ar.lesson_id = $1
+        LEFT JOIN LATERAL (
+            SELECT lesson_start_time
+            FROM trial_lesson_usages
+            WHERE student_id = gs.student_id AND group_id = gs.group_id
+            ORDER BY used_at DESC
+            LIMIT 1
+        ) tlu ON TRUE
+        LEFT JOIN attendance_records ar ON ar.student_id = s.id
+            AND ar.lesson_id = $1
         WHERE gs.group_id = $2
+          AND (
+            COALESCE(gs.is_trial, FALSE) = FALSE
+            OR (
+              COALESCE(gs.is_trial, FALSE) = TRUE
+              AND (
+                tlu.lesson_start_time IS NULL
+                                OR date_trunc('minute'::text, tlu.lesson_start_time) = date_trunc('minute'::text, $3::timestamp)
+              )
+            )
+          )
         ORDER BY u.name
         """,
-        lesson_id, group_id
+        lesson_id,
+        group_id,
+        lesson_start_time,
     )
-    return {"students": [dict(student) for student in students]}
+
+    trial_only_students = await pool.fetch(
+        """
+        WITH latest AS (
+            SELECT DISTINCT ON (student_id)
+                student_id,
+                lesson_start_time
+            FROM trial_lesson_usages
+            WHERE group_id = $1
+            ORDER BY student_id, used_at DESC
+        )
+        SELECT
+            s.id,
+            u.name,
+            u.email,
+            ar.status,
+            ar.recorded_at
+        FROM latest
+        JOIN students s ON s.id = latest.student_id
+        JOIN users u ON u.id = s.user_id
+        LEFT JOIN attendance_records ar ON ar.student_id = s.id
+            AND ar.lesson_id = $2
+        WHERE NOT EXISTS (
+            SELECT 1 FROM group_students gs
+            WHERE gs.group_id = $1 AND gs.student_id = latest.student_id
+        )
+                    AND date_trunc('minute'::text, latest.lesson_start_time) = date_trunc('minute'::text, $3::timestamp)
+        ORDER BY u.name
+        """,
+        group_id,
+        lesson_id,
+        lesson_start_time,
+    )
+
+    combined = [dict(s) for s in list(students) + list(trial_only_students)]
+    seen_ids = set()
+    combined = [s for s in combined if not (s["id"] in seen_ids or seen_ids.add(s["id"]))]
+    return {"students": combined}
 @router.post("/groups/{group_id}/lessons/{lesson_id}/attendance")
 async def save_teacher_lesson_attendance(
     group_id: int,

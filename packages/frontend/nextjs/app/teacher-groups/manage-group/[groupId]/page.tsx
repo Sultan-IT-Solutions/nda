@@ -15,9 +15,11 @@ import { API } from '@/lib/api';
 interface Student {
   id: number;
   name: string;
-  attendance_rate: number;
-  last_attendance: string;
-  status: string;
+  email?: string;
+  phone_number?: string | null;
+  is_trial?: boolean;
+  joined_at?: string | null;
+  trial_selected_lesson_start_time?: string | null;
 }
 
 interface GroupStats {
@@ -69,6 +71,32 @@ export default function ManageGroupPage() {
   const [loading, setLoading] = useState(false);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [groupNotes, setGroupNotes] = useState('');
+
+  const formatTrialSelectedLessonPretty = (value: string | null | undefined): string | null => {
+    if (!value) return null
+    const d = new Date(value)
+    if (Number.isNaN(d.getTime())) return null
+
+    const weekdayRaw = new Intl.DateTimeFormat("ru-RU", { weekday: "short", timeZone: "Asia/Almaty" }).format(d)
+    const weekday = weekdayRaw.replace(/\.$/, "")
+    const weekdayCapitalized = weekday.length > 0 ? weekday[0].toUpperCase() + weekday.slice(1) : weekday
+
+    const dateRaw = new Intl.DateTimeFormat("ru-RU", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+      timeZone: "Asia/Almaty",
+    }).format(d)
+    const date = dateRaw.replace(/\s?г\.?$/, "")
+
+    const time = new Intl.DateTimeFormat("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Asia/Almaty",
+    }).format(d)
+
+    return `${weekdayCapitalized} · ${date} · ${time}`
+  }
 
   useEffect(() => {
     if (groupId) {
@@ -245,6 +273,47 @@ export default function ManageGroupPage() {
                 </div>
               )}
             </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Пробные записи</CardTitle>
+                <CardDescription>Выбранное время пробного урока для учеников</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <div className="flex items-center justify-center py-6">
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                    <span className="ml-2">Загрузка...</span>
+                  </div>
+                ) : (
+                  (() => {
+                    const trialStudents = (students || []).filter((s) => Boolean(s.is_trial))
+                    if (trialStudents.length === 0) {
+                      return <p className="text-sm text-muted-foreground">Нет пробных учеников</p>
+                    }
+
+                    return (
+                      <div className="space-y-3">
+                        {trialStudents.map((s) => (
+                          <div key={s.id} className="flex items-center justify-between rounded-lg border bg-white p-3">
+                            <div>
+                              <div className="font-medium text-gray-900">{s.name}</div>
+                              {s.email && <div className="text-xs text-gray-500">{s.email}</div>}
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm font-medium text-gray-900">
+                                {formatTrialSelectedLessonPretty(s.trial_selected_lesson_start_time) || "—"}
+                              </div>
+                              <div className="text-xs text-gray-500">выбранное время</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="attendance" className="space-y-6">
