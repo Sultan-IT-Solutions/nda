@@ -205,7 +205,7 @@ export function AdminHeader({ userName, userEmail }: AdminHeaderProps) {
               <SheetContent side="left" className="w-[320px] p-0">
                 <SheetHeader className="px-5 py-4 border-b">
                   <SheetTitle className="text-base font-semibold">Nomad Dance Academy</SheetTitle>
-                  <div className="text-xs text-muted-foreground">Админ панель</div>
+                  <div className="text-xs text-muted-foreground">Администраторская панель</div>
                 </SheetHeader>
 
                 <ScrollArea className="h-[calc(100vh-160px)]">

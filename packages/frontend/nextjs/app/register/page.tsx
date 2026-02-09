@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Gift, Users, Clock, Eye, EyeOff } from "lucide-react"
@@ -20,8 +20,34 @@ export default function RegisterPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [isLoading, setIsLoading] = useState(false)
 
+  const [registrationEnabled, setRegistrationEnabled] = useState(true)
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
+
   const [showPassword, setShowPassword] = useState(false)
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false)
+
+  const isDisabled = isLoading || (settingsLoaded && !registrationEnabled)
+
+  useEffect(() => {
+    let cancelled = false
+
+    ;(async () => {
+      try {
+        const res = await API.settings.getPublic()
+        const enabled = res?.settings?.["registration.enabled"]
+        const normalized = typeof enabled === "boolean" ? enabled : true
+        if (!cancelled) setRegistrationEnabled(normalized)
+      } catch {
+        // ignore
+      } finally {
+        if (!cancelled) setSettingsLoaded(true)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -38,6 +64,12 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (settingsLoaded && !registrationEnabled) {
+      toast.error("Регистрация временно отключена")
+      return
+    }
+
     setFieldErrors({})
     setIsLoading(true)
 
@@ -175,6 +207,12 @@ export default function RegisterPage() {
               <p className="text-sm text-gray-600">Создайте аккаунт и запишитесь на пробное занятие прямо сейчас!</p>
             </div>
 
+            {settingsLoaded && !registrationEnabled && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                Регистрация временно отключена. Попробуйте позже.
+              </div>
+            )}
+
 
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
@@ -184,6 +222,7 @@ export default function RegisterPage() {
                   name="full_name"
                   value={formData.full_name}
                   onChange={handleChange}
+                  disabled={isDisabled}
                   placeholder="Введите ваше имя"
                   className={`w-full px-4 py-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition ${
                     fieldErrors.full_name ? "border-red-500" : "border-gray-200"
@@ -199,6 +238,7 @@ export default function RegisterPage() {
                   name="email"
                   value={formData.email}
                   onChange={handleChange}
+                  disabled={isDisabled}
                   placeholder="example@gmail.com"
                   className={`w-full px-4 py-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition ${
                     fieldErrors.email ? "border-red-500" : "border-gray-200"
@@ -219,6 +259,7 @@ export default function RegisterPage() {
                     name="phone"
                     value={formData.phone}
                     onChange={handleChange}
+                    disabled={isDisabled}
                     placeholder="+7 (___)_____"
                     className={`flex-1 px-4 py-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition ${
                       fieldErrors.phone ? "border-red-500" : "border-gray-200"
@@ -238,6 +279,7 @@ export default function RegisterPage() {
                     name="password"
                     value={formData.password}
                     onChange={handleChange}
+                    disabled={isDisabled}
                     placeholder="Придумайте пароль"
                     className={`w-full px-4 py-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition ${
                       fieldErrors.password ? "border-red-500" : "border-gray-200"
@@ -287,7 +329,7 @@ export default function RegisterPage() {
 
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isDisabled}
                 className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 text-white font-semibold py-3 rounded-full transition duration-200"
               >
                 {isLoading ? "Регистрируемся..." : "Зарегистрироваться"}

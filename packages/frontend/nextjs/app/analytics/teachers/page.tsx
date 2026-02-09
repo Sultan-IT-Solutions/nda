@@ -57,6 +57,30 @@ interface TeacherAnalytics {
   totalHours: number
   studentCount: number
   groupCount: number
+  mondayHours: number
+  tuesdayHours: number
+  wednesdayHours: number
+  thursdayHours: number
+  fridayHours: number
+  saturdayHours: number
+  sundayHours: number
+}
+
+type AnalyticsMode = 'schedule' | 'lessons'
+type LessonsWindowDays = 7 | 30 | 90
+
+function formatLocalISODate(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function formatHoursWithUnit(hours: number): string {
+  if (!Number.isFinite(hours) || hours === 0) return '0ч'
+  const rounded = Math.round(hours * 10) / 10
+  const value = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)
+  return `${value}ч`
 }
 
 export default function TeacherAnalyticsPage() {
@@ -66,7 +90,8 @@ export default function TeacherAnalyticsPage() {
   const [error, setError] = useState<string | null>(null)
   const [user, setUser] = useState<UserData | null>(null)
   const [teachersData, setTeachersData] = useState<TeacherAnalytics[]>([])
-  const [selectedMonth, setSelectedMonth] = useState("october")
+  const [analyticsMode, setAnalyticsMode] = useState<AnalyticsMode>('schedule')
+  const [lessonsWindowDays, setLessonsWindowDays] = useState<LessonsWindowDays>(7)
   const [totalHours, setTotalHours] = useState(0)
   const [totalTeachers, setTotalTeachers] = useState(0)
   const [totalStudents, setTotalStudents] = useState(0)
@@ -85,24 +110,44 @@ export default function TeacherAnalyticsPage() {
     }
 
     const BOM = '\uFEFF'
-    const headers = ['Преподаватель', 'Всего часов', 'Учеников', 'Групп']
+    const headers = ['Преподаватель', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс', 'Итого']
+
+    const periodStart = formatLocalISODate(new Date())
+    const periodEnd =
+      analyticsMode === 'lessons'
+        ? formatLocalISODate(new Date(Date.now() + lessonsWindowDays * 24 * 60 * 60 * 1000))
+        : periodStart
+    const periodLabel = analyticsMode === 'lessons'
+      ? `Период;${periodStart} — ${periodEnd} (следующие ${lessonsWindowDays} дней)`
+      : `Период;${periodStart} (по расписанию)`
 
     const rows = teachersData.map(teacher => [
       teacher.teacherName,
-      teacher.totalHours,
-      teacher.studentCount,
-      teacher.groupCount || 0
+      formatHoursWithUnit(teacher.mondayHours || 0),
+      formatHoursWithUnit(teacher.tuesdayHours || 0),
+      formatHoursWithUnit(teacher.wednesdayHours || 0),
+      formatHoursWithUnit(teacher.thursdayHours || 0),
+      formatHoursWithUnit(teacher.fridayHours || 0),
+      formatHoursWithUnit(teacher.saturdayHours || 0),
+      formatHoursWithUnit(teacher.sundayHours || 0),
+      formatHoursWithUnit(teacher.totalHours)
     ])
 
     const totalsRow = [
       'ИТОГО',
-      totalHours,
-      totalStudents,
-      totalGroups
+      formatHoursWithUnit(teachersData.reduce((sum, t) => sum + (t.mondayHours || 0), 0)),
+      formatHoursWithUnit(teachersData.reduce((sum, t) => sum + (t.tuesdayHours || 0), 0)),
+      formatHoursWithUnit(teachersData.reduce((sum, t) => sum + (t.wednesdayHours || 0), 0)),
+      formatHoursWithUnit(teachersData.reduce((sum, t) => sum + (t.thursdayHours || 0), 0)),
+      formatHoursWithUnit(teachersData.reduce((sum, t) => sum + (t.fridayHours || 0), 0)),
+      formatHoursWithUnit(teachersData.reduce((sum, t) => sum + (t.saturdayHours || 0), 0)),
+      formatHoursWithUnit(teachersData.reduce((sum, t) => sum + (t.sundayHours || 0), 0)),
+      formatHoursWithUnit(totalHours)
     ]
     rows.push(totalsRow)
 
     const csvContent = BOM + [
+      periodLabel,
       headers.join(';'),
       ...rows.map(row => row.join(';'))
     ].join('\n')
@@ -111,8 +156,10 @@ export default function TeacherAnalyticsPage() {
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    const date = new Date().toISOString().split('T')[0]
-    link.download = `Аналитика_преподавателей_${date}.csv`
+    const fileSuffix = analyticsMode === 'lessons'
+      ? `${periodStart}_to_${periodEnd}_${lessonsWindowDays}d`
+      : `${periodStart}_schedule`
+    link.download = `Аналитика_преподавателей_${fileSuffix}.csv`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -124,6 +171,8 @@ export default function TeacherAnalyticsPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        setLoading(true)
+        setError(null)
         const userData = await API.users.me();
         setUser(userData.user);
 
@@ -133,7 +182,10 @@ export default function TeacherAnalyticsPage() {
           return;
         }
 
-        const data = await API.admin.getTeachersAnalytics()
+        const data = await API.admin.getTeachersAnalytics(
+          analyticsMode,
+          analyticsMode === 'lessons' ? lessonsWindowDays : undefined
+        )
 
         const teachers: TeacherAnalytics[] = data.teachers || []
         setTeachersData(teachers);
@@ -158,7 +210,7 @@ export default function TeacherAnalyticsPage() {
     }
 
     fetchData();
-  }, [router]);
+  }, [router, analyticsMode, lessonsWindowDays]);
 
   if (loading) {
     return (
@@ -199,10 +251,38 @@ export default function TeacherAnalyticsPage() {
               <h1 className="text-2xl font-semibold text-foreground">Аналитика преподавателей</h1>
               <p className="text-sm text-muted-foreground mt-1">Нагрузка и распределение групп</p>
             </div>
-            <Button onClick={downloadExcel} variant="outline" className="gap-2">
-              <Download size={16} />
-              Экспорт в Excel
-            </Button>
+            <div className="flex items-center gap-3">
+              <Select value={analyticsMode} onValueChange={(v) => setAnalyticsMode(v as AnalyticsMode)}>
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder="Режим" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="schedule">По расписанию</SelectItem>
+                  <SelectItem value="lessons">По занятиям (текущая неделя)</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {analyticsMode === 'lessons' && (
+                <Select
+                  value={String(lessonsWindowDays)}
+                  onValueChange={(v) => setLessonsWindowDays(Number(v) as LessonsWindowDays)}
+                >
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="Период" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="7">Следующие 7 дней</SelectItem>
+                    <SelectItem value="30">Следующие 30 дней</SelectItem>
+                    <SelectItem value="90">Следующие 90 дней</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+
+              <Button onClick={downloadExcel} variant="outline" className="gap-2">
+                <Download size={16} />
+                Экспорт в Excel
+              </Button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">

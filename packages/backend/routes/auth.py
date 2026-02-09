@@ -4,6 +4,7 @@ from typing import Optional
 from app.database import get_connection
 from app.auth import verify_password, get_password_hash, create_access_token, create_refresh_token, decode_refresh_token
 from app.config import get_settings
+from app.system_settings import get_bool_setting
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 class RegisterRequest(BaseModel):
     full_name: str
@@ -20,6 +21,11 @@ class LoginResponse(BaseModel):
     user: dict
 @router.post("/register")
 async def register(data: RegisterRequest):
+    pool = await get_connection()
+    registration_enabled = await get_bool_setting(pool, "registration.enabled", default=True)
+    if not registration_enabled:
+        raise HTTPException(status_code=403, detail="Регистрация временно отключена")
+
     errors = {}
     if not data.full_name:
         errors["full_name"] = "Имя обязательно"
@@ -35,7 +41,6 @@ async def register(data: RegisterRequest):
         errors["password_confirm"] = "Пароли не совпадают"
     if errors:
         raise HTTPException(status_code=400, detail={"errors": errors})
-    pool = await get_connection()
     existing = await pool.fetchrow(
         "SELECT id FROM users WHERE email = $1",
         data.email

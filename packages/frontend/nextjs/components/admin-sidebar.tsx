@@ -41,7 +41,7 @@ export function AdminSidebar() {
         {!isCollapsed && (
           <>
             <h1 className="text-xl font-bold">Nomad Dance Academy</h1>
-            <p className="text-sm text-gray-400">Админ панель</p>
+            <p className="text-sm text-gray-400">Администраторская панель</p>
           </>
         )}
       </div>

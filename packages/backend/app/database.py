@@ -7,6 +7,9 @@ pool: Optional[asyncpg.Pool] = None
 
 _trial_schema_ready: bool = False
 _trial_schema_lock = asyncio.Lock()
+
+_settings_schema_ready: bool = False
+_settings_schema_lock = asyncio.Lock()
 async def connect_to_database():
     global pool
     settings = get_settings()
@@ -52,11 +55,6 @@ async def get_connection():
 
 
 async def ensure_trial_lesson_schema(db_pool: asyncpg.Pool) -> None:
-    """Ensure DB schema needed for trial lessons exists.
-
-    Vercel/serverless deployments may not reliably trigger FastAPI lifespan events,
-    so we defensively ensure the schema at runtime before trial-related queries.
-    """
     global _trial_schema_ready
     if _trial_schema_ready:
         return
@@ -87,3 +85,23 @@ async def ensure_trial_lesson_schema(db_pool: asyncpg.Pool) -> None:
                 "CREATE INDEX IF NOT EXISTS idx_trial_usages_used_at ON trial_lesson_usages(used_at)"
             )
         _trial_schema_ready = True
+
+
+async def ensure_system_settings_schema(db_pool: asyncpg.Pool) -> None:
+    global _settings_schema_ready
+    if _settings_schema_ready:
+        return
+    async with _settings_schema_lock:
+        if _settings_schema_ready:
+            return
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS system_settings (
+                    key TEXT PRIMARY KEY,
+                    value_json JSONB NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+        _settings_schema_ready = True

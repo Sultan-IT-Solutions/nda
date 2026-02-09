@@ -10,9 +10,25 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Plus, Loader2, Calendar } from 'lucide-react';
-import { format, parse } from "date-fns"
+import { format } from "date-fns"
 import { ru } from "date-fns/locale"
 import { API, handleApiError } from '@/lib/api';
+
+function toLocalISODate(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function fromLocalISODate(value: string): Date | undefined {
+  if (!value) return undefined
+  const match = /^\d{4}-\d{2}-\d{2}$/.test(value)
+  if (!match) return undefined
+  const [year, month, day] = value.split('-').map((p) => Number(p))
+  if (!year || !month || !day) return undefined
+  return new Date(year, month - 1, day)
+}
 
 interface CreateGroupModalProps {
   isOpen: boolean;
@@ -35,7 +51,7 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
     is_trial: false,
     trial_price: '',
     trial_currency: 'KZT',
-    start_date: new Date().toISOString().split('T')[0],
+    start_date: toLocalISODate(new Date()),
     end_date: '',
   });
 
@@ -92,7 +108,7 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
         is_trial: false,
         trial_price: '',
         trial_currency: 'KZT',
-        start_date: new Date().toISOString().split('T')[0],
+        start_date: toLocalISODate(new Date()),
         end_date: '',
       });
 
@@ -222,7 +238,7 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
                   >
                     <Calendar className="mr-2 h-4 w-4" />
                     {formData.start_date ? (
-                      format(new Date(formData.start_date), "dd/MM/yyyy", { locale: ru })
+                      format(fromLocalISODate(formData.start_date) ?? new Date(), "dd/MM/yyyy", { locale: ru })
                     ) : (
                       <span className="text-gray-500">Выберите дату</span>
                     )}
@@ -231,10 +247,10 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
                 <PopoverContent className="w-auto p-0" align="start">
                   <CalendarComponent
                     mode="single"
-                    selected={formData.start_date ? new Date(formData.start_date) : undefined}
+                    selected={fromLocalISODate(formData.start_date)}
                     onSelect={(date) => {
                       if (date) {
-                        handleInputChange('start_date', date.toISOString().split('T')[0])
+                        handleInputChange('start_date', toLocalISODate(date))
                       }
                     }}
                     locale={ru}
@@ -254,7 +270,7 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
                   >
                     <Calendar className="mr-2 h-4 w-4" />
                     {formData.end_date ? (
-                      format(new Date(formData.end_date), "dd/MM/yyyy", { locale: ru })
+                      format(fromLocalISODate(formData.end_date) ?? new Date(), "dd/MM/yyyy", { locale: ru })
                     ) : (
                       <span className="text-gray-500">Выберите дату</span>
                     )}
@@ -263,16 +279,20 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
                 <PopoverContent className="w-auto p-0" align="start">
                   <CalendarComponent
                     mode="single"
-                    selected={formData.end_date ? new Date(formData.end_date) : undefined}
+                    selected={fromLocalISODate(formData.end_date)}
                     onSelect={(date) => {
                       if (date) {
-                        handleInputChange('end_date', date.toISOString().split('T')[0])
+                        handleInputChange('end_date', toLocalISODate(date))
                       } else {
                         handleInputChange('end_date', '')
                       }
                     }}
                     locale={ru}
-                    disabled={(date) => formData.start_date ? date < new Date(formData.start_date) : date < new Date(new Date().setHours(0, 0, 0, 0))}
+                    disabled={(date) =>
+                      formData.start_date
+                        ? date < (fromLocalISODate(formData.start_date) ?? new Date(new Date().setHours(0, 0, 0, 0)))
+                        : date < new Date(new Date().setHours(0, 0, 0, 0))
+                    }
                     initialFocus
                   />
                 </PopoverContent>

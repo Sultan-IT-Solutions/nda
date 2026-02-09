@@ -6,6 +6,7 @@ import {
   Clock,
   Tag,
   MapPin,
+  Gear,
   UserCircle,
 } from "@phosphor-icons/react"
 
@@ -28,4 +29,5 @@ export const adminNavItems: AdminNavItem[] = [
   { label: "Группы", icon: Users, path: "/groups" },
   { label: "Категории", icon: Tag, path: "/analytics/categories" },
   { label: "Залы", icon: MapPin, path: "/halls" },
+  { label: "Системные настройки", icon: Gear, path: "/analytics/settings" },
 ]

@@ -274,6 +274,9 @@ export const API = {
         body: JSON.stringify(data),
       }),
   },
+  settings: {
+    getPublic: () => apiRequest('/settings/public', { method: 'GET' }),
+  },
 
   users: {
     me: async () => {
@@ -469,7 +472,13 @@ export const API = {
 
   admin: {
     getAnalytics: () => apiRequest('/admin/analytics'),
-    getTeachersAnalytics: () => apiRequest('/admin/analytics/teachers'),
+    getTeachersAnalytics: (mode?: 'schedule' | 'lessons', days?: 7 | 30 | 90) => {
+      const params = new URLSearchParams()
+      if (mode) params.set('mode', mode)
+      if (typeof days === 'number') params.set('days', String(days))
+      const qs = params.toString()
+      return apiRequest(`/admin/analytics/teachers${qs ? `?${qs}` : ''}`)
+    },
     getGroupsAnalytics: () => apiRequest('/admin/analytics/groups'),
     getStudentsAnalytics: () => apiRequest('/admin/analytics/students'),
     getGroupDetails: (groupId: number) => apiRequest(`/admin/groups/${groupId}`),
@@ -526,6 +535,16 @@ export const API = {
       }),
     getTrialLessonsHistory: (studentId: number) =>
       apiRequest(`/admin/trial-lessons/students/${studentId}/history`),
+
+    getSettings: () => apiRequest('/admin/settings'),
+    updateSettings: (data: {
+      registration_enabled?: boolean
+      trial_lessons_enabled?: boolean
+    }) =>
+      apiRequest('/admin/settings', {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
   },
 
   categories: {

@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, field_validator
 from typing import Optional, List, Union
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
 from app.database import get_connection, ensure_trial_lesson_schema
+from app.system_settings import get_bool_setting
 from app.auth import require_admin, require_admin_or_teacher
 router = APIRouter(prefix="/admin", tags=["Admin"])
 ALMATY_TZ = ZoneInfo("Asia/Almaty")
@@ -451,31 +452,72 @@ async def get_hall_analytics(user: dict = Depends(require_admin)):
     pool = await get_connection()
     rows = await pool.fetch(
         """
-        WITH unique_weekly_slots AS (
-            SELECT DISTINCT ON (l.hall_id, l.group_id, EXTRACT(DOW FROM l.start_time), l.start_time::time)
+        WITH params AS (
+            SELECT
+                CURRENT_DATE::date AS today,
+                CURRENT_TIMESTAMP::timestamp AS horizon_start,
+                (CURRENT_TIMESTAMP::timestamp + INTERVAL '90 days') AS horizon_end
+        ),
+        slot_candidates AS (
+            SELECT
+                g.hall_id,
+                g.id AS group_id,
+                gs.day_of_week,
+                gs.start_time AS slot_time,
+                COALESCE(g.duration_minutes, 60) AS duration_minutes,
+                0 AS source_priority
+            FROM groups g
+            JOIN group_schedules gs ON gs.group_id = g.id AND gs.is_active = TRUE
+            CROSS JOIN params p
+            WHERE g.is_closed = FALSE
+              AND g.hall_id IS NOT NULL
+              AND (g.start_date IS NULL OR g.start_date <= p.today)
+              AND (
+                    COALESCE(g.recurring_until, g.end_date) IS NULL
+                 OR COALESCE(g.recurring_until, g.end_date) >= p.today
+              )
+
+            UNION ALL
+
+            SELECT
                 l.hall_id,
                 l.group_id,
                 EXTRACT(DOW FROM l.start_time)::int AS day_of_week,
-                l.start_time::time AS lesson_time,
-                l.duration_minutes
+                l.start_time::time AS slot_time,
+                COALESCE(l.duration_minutes, g.duration_minutes, 60) AS duration_minutes,
+                1 AS source_priority
             FROM lessons l
             JOIN groups g ON g.id = l.group_id AND g.is_closed = FALSE
+                        CROSS JOIN params p
             WHERE l.hall_id IS NOT NULL
-              AND l.start_time >= CURRENT_DATE
-              AND l.start_time < CURRENT_DATE + INTERVAL '30 days'
+              AND COALESCE(l.is_cancelled, FALSE) = FALSE
+                            AND l.start_time >= p.horizon_start
+                            AND l.start_time < p.horizon_end
+        ),
+        unique_weekly_slots AS (
+            SELECT DISTINCT ON (hall_id, group_id, day_of_week, slot_time)
+                hall_id,
+                group_id,
+                day_of_week,
+                slot_time,
+                duration_minutes
+            FROM slot_candidates
+            ORDER BY hall_id, group_id, day_of_week, slot_time, source_priority DESC, duration_minutes DESC
         )
         SELECT
-            h.id, h.name,
-            COALESCE(SUM(CASE WHEN uws.day_of_week = 1 THEN COALESCE(uws.duration_minutes, 60) / 60.0 ELSE 0 END), 0) AS monday_hours,
-            COALESCE(SUM(CASE WHEN uws.day_of_week = 2 THEN COALESCE(uws.duration_minutes, 60) / 60.0 ELSE 0 END), 0) AS tuesday_hours,
-            COALESCE(SUM(CASE WHEN uws.day_of_week = 3 THEN COALESCE(uws.duration_minutes, 60) / 60.0 ELSE 0 END), 0) AS wednesday_hours,
-            COALESCE(SUM(CASE WHEN uws.day_of_week = 4 THEN COALESCE(uws.duration_minutes, 60) / 60.0 ELSE 0 END), 0) AS thursday_hours,
-            COALESCE(SUM(CASE WHEN uws.day_of_week = 5 THEN COALESCE(uws.duration_minutes, 60) / 60.0 ELSE 0 END), 0) AS friday_hours,
-            COALESCE(SUM(CASE WHEN uws.day_of_week = 6 THEN COALESCE(uws.duration_minutes, 60) / 60.0 ELSE 0 END), 0) AS saturday_hours,
-            COALESCE(SUM(CASE WHEN uws.day_of_week = 0 THEN COALESCE(uws.duration_minutes, 60) / 60.0 ELSE 0 END), 0) AS sunday_hours
+            h.id,
+            h.name,
+            h.capacity,
+            COALESCE(SUM(CASE WHEN uws.day_of_week = 1 THEN uws.duration_minutes / 60.0 ELSE 0 END), 0) AS monday_hours,
+            COALESCE(SUM(CASE WHEN uws.day_of_week = 2 THEN uws.duration_minutes / 60.0 ELSE 0 END), 0) AS tuesday_hours,
+            COALESCE(SUM(CASE WHEN uws.day_of_week = 3 THEN uws.duration_minutes / 60.0 ELSE 0 END), 0) AS wednesday_hours,
+            COALESCE(SUM(CASE WHEN uws.day_of_week = 4 THEN uws.duration_minutes / 60.0 ELSE 0 END), 0) AS thursday_hours,
+            COALESCE(SUM(CASE WHEN uws.day_of_week = 5 THEN uws.duration_minutes / 60.0 ELSE 0 END), 0) AS friday_hours,
+            COALESCE(SUM(CASE WHEN uws.day_of_week = 6 THEN uws.duration_minutes / 60.0 ELSE 0 END), 0) AS saturday_hours,
+            COALESCE(SUM(CASE WHEN uws.day_of_week = 0 THEN uws.duration_minutes / 60.0 ELSE 0 END), 0) AS sunday_hours
         FROM halls h
         LEFT JOIN unique_weekly_slots uws ON uws.hall_id = h.id
-        GROUP BY h.id, h.name
+        GROUP BY h.id, h.name, h.capacity
         ORDER BY h.id
         """
     )
@@ -492,44 +534,200 @@ async def get_hall_analytics(user: dict = Depends(require_admin)):
         halls.append({
             "hallId": r["id"],
             "hallName": r["name"],
-            "monday": round(monday),
-            "tuesday": round(tuesday),
-            "wednesday": round(wednesday),
-            "thursday": round(thursday),
-            "friday": round(friday),
-            "saturday": round(saturday),
-            "sunday": round(sunday),
-            "total": round(total)
+            "capacity": int(r["capacity"]) if r["capacity"] is not None else 0,
+            "monday": round(monday, 1),
+            "tuesday": round(tuesday, 1),
+            "wednesday": round(wednesday, 1),
+            "thursday": round(thursday, 1),
+            "friday": round(friday, 1),
+            "saturday": round(saturday, 1),
+            "sunday": round(sunday, 1),
+            "total": round(total, 1)
         })
     return {"halls": halls}
 
 @router.get("/analytics/teachers")
-async def get_teacher_analytics(user: dict = Depends(require_admin)):
+async def get_teacher_analytics(
+    mode: str = Query("schedule"),
+    days: int = Query(7),
+    user: dict = Depends(require_admin)
+):
     pool = await get_connection()
-    rows = await pool.fetch(
-        """
+
+    if mode not in {"schedule", "lessons"}:
+        raise HTTPException(status_code=400, detail="Invalid mode. Use 'schedule' or 'lessons'.")
+
+    if mode == "lessons" and days not in {7, 30, 90}:
+        raise HTTPException(status_code=400, detail="Invalid days. Use 7, 30, or 90.")
+
+    schedule_sql = """
+        WITH params AS (
+            SELECT CURRENT_DATE::date AS today
+        ),
+        active_groups AS (
+            SELECT g.*
+            FROM groups g
+            CROSS JOIN params p
+            WHERE g.is_closed = FALSE
+              AND (g.start_date IS NULL OR g.start_date <= p.today)
+              AND (
+                    COALESCE(g.recurring_until, g.end_date) IS NULL
+                 OR COALESCE(g.recurring_until, g.end_date) >= p.today
+              )
+        ),
+        group_schedule_counts AS (
+            SELECT
+                gs.group_id,
+                COUNT(*) FILTER (WHERE gs.is_active = TRUE) AS schedule_count
+            FROM group_schedules gs
+            GROUP BY gs.group_id
+        ),
+        teacher_group_load AS (
+            SELECT
+                gt.teacher_id,
+                gt.group_id,
+                (COALESCE(ag.duration_minutes, 60) * COALESCE(gsc.schedule_count, 0)) / 60.0 AS hours_per_week
+            FROM group_teachers gt
+            JOIN active_groups ag ON ag.id = gt.group_id
+            LEFT JOIN group_schedule_counts gsc ON gsc.group_id = gt.group_id
+        ),
+        teacher_hours AS (
+            SELECT
+                t.id AS teacher_id,
+                COALESCE(SUM(tgl.hours_per_week), 0) AS total_hours_per_week,
+                COUNT(DISTINCT tgl.group_id) AS group_count
+            FROM teachers t
+            LEFT JOIN teacher_group_load tgl ON tgl.teacher_id = t.id
+            GROUP BY t.id
+        ),
+        teacher_day_hours AS (
+            SELECT
+                gt.teacher_id,
+                gs.day_of_week,
+                COALESCE(SUM(COALESCE(ag.duration_minutes, 60)), 0) / 60.0 AS hours
+            FROM group_teachers gt
+            JOIN active_groups ag ON ag.id = gt.group_id
+            JOIN group_schedules gs ON gs.group_id = ag.id AND gs.is_active = TRUE
+            GROUP BY gt.teacher_id, gs.day_of_week
+        ),
+        teacher_students AS (
+            SELECT
+                gt.teacher_id,
+                COUNT(DISTINCT gst.student_id) AS student_count
+            FROM group_teachers gt
+            JOIN active_groups ag ON ag.id = gt.group_id
+            JOIN group_students gst ON gst.group_id = gt.group_id AND gst.is_trial = FALSE
+            GROUP BY gt.teacher_id
+        )
         SELECT
-            t.id, u.name,
-            COALESCE(SUM(g.duration_minutes), 0) / 60.0 AS total_hours_per_week,
-            COUNT(DISTINCT gst.student_id) AS student_count,
-            COUNT(DISTINCT g.id) AS group_count
+            t.id,
+            u.name,
+            th.total_hours_per_week,
+            COALESCE(ts.student_count, 0) AS student_count,
+            th.group_count,
+            COALESCE(SUM(CASE WHEN tdh.day_of_week = 1 THEN tdh.hours ELSE 0 END), 0) AS monday_hours,
+            COALESCE(SUM(CASE WHEN tdh.day_of_week = 2 THEN tdh.hours ELSE 0 END), 0) AS tuesday_hours,
+            COALESCE(SUM(CASE WHEN tdh.day_of_week = 3 THEN tdh.hours ELSE 0 END), 0) AS wednesday_hours,
+            COALESCE(SUM(CASE WHEN tdh.day_of_week = 4 THEN tdh.hours ELSE 0 END), 0) AS thursday_hours,
+            COALESCE(SUM(CASE WHEN tdh.day_of_week = 5 THEN tdh.hours ELSE 0 END), 0) AS friday_hours,
+            COALESCE(SUM(CASE WHEN tdh.day_of_week = 6 THEN tdh.hours ELSE 0 END), 0) AS saturday_hours,
+            COALESCE(SUM(CASE WHEN tdh.day_of_week = 0 THEN tdh.hours ELSE 0 END), 0) AS sunday_hours
         FROM teachers t
         JOIN users u ON u.id = t.user_id
-        LEFT JOIN group_teachers gt ON gt.teacher_id = t.id
-        LEFT JOIN groups g ON g.id = gt.group_id AND g.is_closed = FALSE
-        LEFT JOIN group_schedules gs ON gs.group_id = g.id AND gs.is_active = TRUE
-        LEFT JOIN group_students gst ON gst.group_id = g.id AND gst.is_trial = FALSE
-        GROUP BY t.id, u.name
-        ORDER BY total_hours_per_week DESC
-        """
-    )
+        JOIN teacher_hours th ON th.teacher_id = t.id
+        LEFT JOIN teacher_students ts ON ts.teacher_id = t.id
+        LEFT JOIN teacher_day_hours tdh ON tdh.teacher_id = t.id
+        WHERE u.role = 'teacher'
+        GROUP BY t.id, u.name, th.total_hours_per_week, ts.student_count, th.group_count
+        ORDER BY th.total_hours_per_week DESC
+    """
+
+    lessons_sql = """
+        WITH params AS (
+            SELECT
+                CURRENT_TIMESTAMP::timestamp AS window_start,
+                $1::int AS window_days
+        ),
+        teacher_lessons AS (
+            SELECT
+                COALESCE(l.substitute_teacher_id, l.teacher_id) AS teacher_id,
+                l.id AS lesson_id,
+                l.group_id,
+                COALESCE(l.duration_minutes, g.duration_minutes, 60) AS duration_minutes
+            FROM lessons l
+            LEFT JOIN groups g ON g.id = l.group_id
+            CROSS JOIN params p
+            WHERE COALESCE(l.is_cancelled, FALSE) = FALSE
+              AND l.start_time >= p.window_start
+              AND l.start_time < (p.window_start + (p.window_days * INTERVAL '1 day'))
+              AND COALESCE(l.substitute_teacher_id, l.teacher_id) IS NOT NULL
+        ),
+        teacher_hours AS (
+            SELECT
+                tl.teacher_id,
+                COALESCE(SUM(tl.duration_minutes), 0) / 60.0 AS total_hours_per_week,
+                COUNT(DISTINCT tl.group_id) AS group_count
+            FROM teacher_lessons tl
+            GROUP BY tl.teacher_id
+        ),
+        teacher_day_hours AS (
+            SELECT
+                tl.teacher_id,
+                EXTRACT(DOW FROM l.start_time)::int AS day_of_week,
+                COALESCE(SUM(tl.duration_minutes), 0) / 60.0 AS hours
+            FROM teacher_lessons tl
+            JOIN lessons l ON l.id = tl.lesson_id
+            GROUP BY tl.teacher_id, EXTRACT(DOW FROM l.start_time)::int
+        ),
+        teacher_students AS (
+            SELECT
+                tl.teacher_id,
+                COUNT(DISTINCT gst.student_id) AS student_count
+            FROM teacher_lessons tl
+            JOIN group_students gst ON gst.group_id = tl.group_id AND gst.is_trial = FALSE
+            GROUP BY tl.teacher_id
+        )
+        SELECT
+            t.id,
+            u.name,
+            COALESCE(th.total_hours_per_week, 0) AS total_hours_per_week,
+            COALESCE(ts.student_count, 0) AS student_count,
+            COALESCE(th.group_count, 0) AS group_count,
+            COALESCE(SUM(CASE WHEN tdh.day_of_week = 1 THEN tdh.hours ELSE 0 END), 0) AS monday_hours,
+            COALESCE(SUM(CASE WHEN tdh.day_of_week = 2 THEN tdh.hours ELSE 0 END), 0) AS tuesday_hours,
+            COALESCE(SUM(CASE WHEN tdh.day_of_week = 3 THEN tdh.hours ELSE 0 END), 0) AS wednesday_hours,
+            COALESCE(SUM(CASE WHEN tdh.day_of_week = 4 THEN tdh.hours ELSE 0 END), 0) AS thursday_hours,
+            COALESCE(SUM(CASE WHEN tdh.day_of_week = 5 THEN tdh.hours ELSE 0 END), 0) AS friday_hours,
+            COALESCE(SUM(CASE WHEN tdh.day_of_week = 6 THEN tdh.hours ELSE 0 END), 0) AS saturday_hours,
+            COALESCE(SUM(CASE WHEN tdh.day_of_week = 0 THEN tdh.hours ELSE 0 END), 0) AS sunday_hours
+        FROM teachers t
+        JOIN users u ON u.id = t.user_id
+        LEFT JOIN teacher_hours th ON th.teacher_id = t.id
+        LEFT JOIN teacher_students ts ON ts.teacher_id = t.id
+        LEFT JOIN teacher_day_hours tdh ON tdh.teacher_id = t.id
+        WHERE u.role = 'teacher'
+        GROUP BY t.id, u.name, th.total_hours_per_week, ts.student_count, th.group_count
+        ORDER BY COALESCE(th.total_hours_per_week, 0) DESC
+    """
+
+    if mode == "lessons":
+        rows = await pool.fetch(lessons_sql, days)
+    else:
+        rows = await pool.fetch(schedule_sql)
     teachers = [
         {
             "teacherId": r["id"],
             "teacherName": r["name"],
-            "totalHours": round(float(r["total_hours_per_week"])) if r["total_hours_per_week"] else 0,
+            "totalHours": round(float(r["total_hours_per_week"]), 1) if r["total_hours_per_week"] else 0,
             "studentCount": int(r["student_count"]) if r["student_count"] else 0,
-            "groupCount": int(r["group_count"]) if r["group_count"] else 0
+            "groupCount": int(r["group_count"]) if r["group_count"] else 0,
+            "mondayHours": round(float(r["monday_hours"]), 1) if r["monday_hours"] else 0,
+            "tuesdayHours": round(float(r["tuesday_hours"]), 1) if r["tuesday_hours"] else 0,
+            "wednesdayHours": round(float(r["wednesday_hours"]), 1) if r["wednesday_hours"] else 0,
+            "thursdayHours": round(float(r["thursday_hours"]), 1) if r["thursday_hours"] else 0,
+            "fridayHours": round(float(r["friday_hours"]), 1) if r["friday_hours"] else 0,
+            "saturdayHours": round(float(r["saturday_hours"]), 1) if r["saturday_hours"] else 0,
+            "sundayHours": round(float(r["sunday_hours"]), 1) if r["sunday_hours"] else 0
         }
         for r in rows
     ]
@@ -539,31 +737,89 @@ async def get_groups_analytics(user: dict = Depends(require_admin)):
     pool = await get_connection()
     rows = await pool.fetch(
         """
+        WITH params AS (
+            SELECT
+                CURRENT_DATE::date AS today,
+                CURRENT_TIMESTAMP::timestamp AS horizon_start,
+                (CURRENT_TIMESTAMP::timestamp + INTERVAL '90 days') AS horizon_end
+        ),
+        active_groups AS (
+            SELECT g.*
+            FROM groups g
+            CROSS JOIN params p
+            WHERE g.is_closed = FALSE
+              AND (g.start_date IS NULL OR g.start_date <= p.today)
+              AND (
+                    COALESCE(g.recurring_until, g.end_date) IS NULL
+                 OR COALESCE(g.recurring_until, g.end_date) >= p.today
+              )
+        ),
+        slot_candidates AS (
+            SELECT
+                ag.id AS group_id,
+                gs.day_of_week,
+                gs.start_time AS slot_time,
+                COALESCE(ag.duration_minutes, 60) AS duration_minutes,
+                0 AS source_priority
+            FROM active_groups ag
+            JOIN group_schedules gs ON gs.group_id = ag.id AND gs.is_active = TRUE
+
+            UNION ALL
+
+            SELECT
+                l.group_id,
+                EXTRACT(DOW FROM l.start_time)::int AS day_of_week,
+                l.start_time::time AS slot_time,
+                COALESCE(l.duration_minutes, ag.duration_minutes, 60) AS duration_minutes,
+                1 AS source_priority
+            FROM lessons l
+            JOIN active_groups ag ON ag.id = l.group_id
+            CROSS JOIN params p
+            WHERE COALESCE(l.is_cancelled, FALSE) = FALSE
+              AND l.start_time >= p.horizon_start
+              AND l.start_time < p.horizon_end
+        ),
+        unique_weekly_slots AS (
+            SELECT DISTINCT ON (group_id, day_of_week, slot_time)
+                group_id,
+                day_of_week,
+                slot_time,
+                duration_minutes
+            FROM slot_candidates
+            ORDER BY group_id, day_of_week, slot_time, source_priority DESC, duration_minutes DESC
+        ),
+        group_load AS (
+            SELECT
+                uws.group_id,
+                COUNT(*) AS schedule_count,
+                COALESCE(SUM(uws.duration_minutes), 0) / 60.0 AS hours_per_week
+            FROM unique_weekly_slots uws
+            GROUP BY uws.group_id
+        )
         SELECT
-            g.id, g.name, g.capacity, g.is_closed,
+            ag.id,
+            ag.name,
+            ag.capacity,
+            ag.is_closed,
             h.name as hall_name,
             u.name as teacher_name,
             COUNT(DISTINCT gs.student_id) as student_count,
-            COALESCE(g.duration_minutes, 60) as duration_minutes,
-            COALESCE(
-                (SELECT COUNT(*)
-                 FROM group_schedules gsch2
-                 WHERE gsch2.group_id = g.id AND gsch2.is_active = TRUE), 0
-            ) as schedule_count,
+            COALESCE(gl.schedule_count, 0) as schedule_count,
+            COALESCE(gl.hours_per_week, 0) as hours_per_week,
             COALESCE(
                 (SELECT AVG(CASE WHEN ar.attended THEN 100.0 ELSE 0 END)
                  FROM attendance_records ar
-                 WHERE ar.group_id = g.id), 0
+                 WHERE ar.group_id = ag.id), 0
             ) as avg_attendance
-        FROM groups g
-        LEFT JOIN halls h ON h.id = g.hall_id
-        LEFT JOIN group_teachers gt ON gt.group_id = g.id AND gt.is_main = TRUE
+        FROM active_groups ag
+        LEFT JOIN group_load gl ON gl.group_id = ag.id
+        LEFT JOIN halls h ON h.id = ag.hall_id
+        LEFT JOIN group_teachers gt ON gt.group_id = ag.id AND gt.is_main = TRUE
         LEFT JOIN teachers t ON t.id = gt.teacher_id
         LEFT JOIN users u ON u.id = t.user_id
-        LEFT JOIN group_students gs ON gs.group_id = g.id AND gs.is_trial = FALSE
-        WHERE g.is_closed = FALSE
-        GROUP BY g.id, g.name, g.capacity, g.is_closed, h.name, u.name
-        ORDER BY g.name
+        LEFT JOIN group_students gs ON gs.group_id = ag.id AND gs.is_trial = FALSE
+        GROUP BY ag.id, ag.name, ag.capacity, ag.is_closed, h.name, u.name, gl.schedule_count, gl.hours_per_week
+        ORDER BY ag.name
         """
     )
     groups = [
@@ -574,8 +830,8 @@ async def get_groups_analytics(user: dict = Depends(require_admin)):
             "teacherName": r["teacher_name"] or "Не назначен",
             "studentCount": int(r["student_count"]) if r["student_count"] else 0,
             "capacity": r["capacity"] or 0,
-            "scheduleCount": 0,
-            "hoursPerWeek": round((int(r["schedule_count"]) * int(r["duration_minutes"])) / 60, 1) if r["schedule_count"] else 0,
+            "scheduleCount": int(r["schedule_count"]) if r["schedule_count"] else 0,
+            "hoursPerWeek": round(float(r["hours_per_week"]), 1) if r["hours_per_week"] else 0,
             "avgAttendance": round(float(r["avg_attendance"])) if r["avg_attendance"] else 0,
             "isClosed": r["is_closed"]
         }
@@ -1667,6 +1923,9 @@ async def delete_student(student_id: int, user: dict = Depends(require_admin)):
 @router.get("/trial-lessons/students")
 async def get_trial_lessons_students(user: dict = Depends(require_admin)):
     pool = await get_connection()
+    enabled = await get_bool_setting(pool, "trial_lessons.enabled", default=True)
+    if not enabled:
+        raise HTTPException(status_code=403, detail="Пробные уроки временно отключены")
     await ensure_trial_lesson_schema(pool)
     rows = await pool.fetch(
         """
@@ -1703,6 +1962,9 @@ async def get_trial_lessons_students(user: dict = Depends(require_admin)):
 @router.post("/trial-lessons/students/{student_id}/adjust")
 async def adjust_student_trial_lessons(student_id: int, data: AdjustTrialLessonsRequest, user: dict = Depends(require_admin)):
     pool = await get_connection()
+    enabled = await get_bool_setting(pool, "trial_lessons.enabled", default=True)
+    if not enabled:
+        raise HTTPException(status_code=403, detail="Пробные уроки временно отключены")
     await ensure_trial_lesson_schema(pool)
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -1769,6 +2031,9 @@ async def adjust_student_trial_lessons(student_id: int, data: AdjustTrialLessons
 @router.get("/trial-lessons/students/{student_id}/history")
 async def get_student_trial_lessons_history(student_id: int, user: dict = Depends(require_admin)):
     pool = await get_connection()
+    enabled = await get_bool_setting(pool, "trial_lessons.enabled", default=True)
+    if not enabled:
+        raise HTTPException(status_code=403, detail="Пробные уроки временно отключены")
     await ensure_trial_lesson_schema(pool)
     rows = await pool.fetch(
         """

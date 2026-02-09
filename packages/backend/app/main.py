@@ -14,6 +14,7 @@ close_database = None
 get_settings = None
 
 auth = users = students = groups = teachers = admin = lessons = categories = notifications = None
+syssettings = None
 
 try:
     from app.database import connect_to_database, close_database
@@ -26,7 +27,7 @@ except Exception:
     traceback.print_exc()
 
 try:
-    from routes import auth, users, students, groups, teachers, admin, lessons, categories, notifications
+    from routes import auth, users, students, groups, teachers, admin, lessons, categories, notifications, syssettings
 except Exception:
     traceback.print_exc()
 
@@ -126,3 +127,5 @@ if categories is not None:
     app.include_router(categories.router)
 if notifications is not None:
     app.include_router(notifications.router)
+if syssettings is not None:
+    app.include_router(syssettings.router)

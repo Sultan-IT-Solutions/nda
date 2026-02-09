@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 from app.database import get_connection, ensure_trial_lesson_schema
+from app.system_settings import get_bool_setting
 from app.auth import require_auth
 from app.notifications import NotificationType, create_notification, notify_admins, notify_teacher_of_group
 router = APIRouter(prefix="/groups", tags=["Groups"])
@@ -301,6 +302,9 @@ async def trial_lesson(
     if user.get("role") != "student":
         raise HTTPException(status_code=403, detail="Only students may request trial lessons")
     pool = await get_connection()
+    enabled = await get_bool_setting(pool, "trial_lessons.enabled", default=True)
+    if not enabled:
+        raise HTTPException(status_code=403, detail="Пробные уроки временно отключены")
     await ensure_trial_lesson_schema(pool)
     student_id = await resolve_student_id(pool, user["id"])
     if not student_id:
