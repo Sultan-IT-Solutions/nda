@@ -18,6 +18,7 @@ export default function RegisterPage() {
     password_confirm: "",
   })
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [phoneTouched, setPhoneTouched] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
 
   const [registrationEnabled, setRegistrationEnabled] = useState(true)
@@ -60,6 +61,42 @@ export default function RegisterPage() {
         return updated
       })
     }
+
+    if (name === "phone" && phoneTouched) {
+      const err = validatePhone(value)
+      setFieldErrors((prev) => {
+        const updated = { ...prev }
+        if (err) updated.phone = err
+        else delete updated.phone
+        return updated
+      })
+    }
+  }
+
+  const normalizePhoneToE164 = (raw: string): string | null => {
+    const digits = String(raw || "").replace(/\D/g, "")
+    if (!digits) return null
+
+    if (digits.length === 10) {
+      return `+7${digits}`
+    }
+    if (digits.length === 11) {
+      if (digits.startsWith("8")) {
+        return `+7${digits.slice(1)}`
+      }
+      if (digits.startsWith("7")) {
+        return `+${digits}`
+      }
+    }
+
+    return null
+  }
+
+  const validatePhone = (raw: string): string | null => {
+    const normalized = normalizePhoneToE164(raw)
+    if (!normalized) return "Введите корректный номер телефона"
+    if (!/^\+7\d{10}$/.test(normalized)) return "Введите корректный номер телефона"
+    return null
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -74,12 +111,21 @@ export default function RegisterPage() {
     setIsLoading(true)
 
     try {
+      const phoneErr = validatePhone(formData.phone)
+      if (phoneErr) {
+        setFieldErrors({ phone: phoneErr })
+        toast.error(phoneErr)
+        return
+      }
+
+      const normalizedPhone = normalizePhoneToE164(formData.phone) || formData.phone
+
       await API.auth.register({
         full_name: formData.full_name,
         email: formData.email,
         password: formData.password,
         password_confirm: formData.password_confirm,
-        phone: formData.phone
+        phone: normalizedPhone
       })
 
       toast.success("Регистрация успешна!")
@@ -250,23 +296,24 @@ export default function RegisterPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Телефон</label>
-                <div className="flex gap-2">
-                  <select className="bg-teal-500 text-white px-3 py-3 rounded-lg font-medium">
-                    <option>🇰🇿</option>
-                  </select>
-                  <input
-                    type="tel"
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleChange}
-                    disabled={isDisabled}
-                    placeholder="+7 (___)_____"
-                    className={`flex-1 px-4 py-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition ${
-                      fieldErrors.phone ? "border-red-500" : "border-gray-200"
-                    }`}
-                  />
-                </div>
-                <p className="text-xs text-gray-500 mt-1">Формат: +7 (__) _____</p>
+                <input
+                  type="tel"
+                  name="phone"
+                  value={formData.phone}
+                  onChange={handleChange}
+                  onBlur={() => {
+                    setPhoneTouched(true)
+                    const err = validatePhone(formData.phone)
+                    if (err) {
+                      setFieldErrors((prev) => ({ ...prev, phone: err }))
+                    }
+                  }}
+                  disabled={isDisabled}
+                  placeholder="+7 (___)_____"
+                  className={`w-full px-4 py-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition ${
+                    fieldErrors.phone ? "border-red-500" : "border-gray-200"
+                  }`}
+                />
                 {fieldErrors.phone && <p className="text-red-600 text-xs mt-1">✕ {fieldErrors.phone}</p>}
               </div>
 
