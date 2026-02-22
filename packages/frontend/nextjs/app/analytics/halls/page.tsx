@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { AdminSidebar } from "@/components/admin-sidebar"
 import { AdminHeader } from "@/components/admin-header"
+import { AdminPagination } from "@/components/admin-pagination"
 import { useSidebar } from "@/hooks/use-sidebar"
 import {
   Clock,
@@ -72,6 +73,8 @@ export default function HallAnalyticsPage() {
   const [activeHalls, setActiveHalls] = useState(0)
   const [avgLoad, setAvgLoad] = useState(0)
   const [peakDay, setPeakDay] = useState("")
+  const [page, setPage] = useState(1)
+  const itemsPerPage = 5
 
   const handleLogout = () => {
     logout()
@@ -211,6 +214,13 @@ export default function HallAnalyticsPage() {
     fetchData()
   }, [router])
 
+  useEffect(() => {
+    setPage(1)
+  }, [hallsData.length])
+
+  const totalPages = Math.max(1, Math.ceil(hallsData.length / itemsPerPage))
+  const paginatedHalls = hallsData.slice((page - 1) * itemsPerPage, page * itemsPerPage)
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -340,7 +350,7 @@ export default function HallAnalyticsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {hallsData.map((hall, index) => (
+                  {paginatedHalls.map((hall, index) => (
                     <TableRow key={`table-${hall.id}`} className="hover:bg-muted/50">
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
@@ -360,6 +370,12 @@ export default function HallAnalyticsPage() {
                   ))}
                 </TableBody>
               </Table>
+              <AdminPagination
+                page={page}
+                totalPages={totalPages}
+                onPrev={() => setPage((p) => Math.max(1, p - 1))}
+                onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+              />
             </CardContent>
           </Card>
 

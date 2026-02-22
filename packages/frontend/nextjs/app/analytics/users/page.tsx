@@ -7,6 +7,7 @@ import { API, handleApiError } from "@/lib/api";
 import { buildLoginUrl, DEFAULT_SESSION_EXPIRED_MESSAGE } from "@/lib/auth";
 import { AdminSidebar } from "@/components/admin-sidebar";
 import { AdminHeader } from "@/components/admin-header";
+import { AdminPagination } from "@/components/admin-pagination";
 import { useSidebar } from "@/hooks/use-sidebar";
 import { Users, UserCircle, Shield, GraduationCap, Chalkboard, Pencil, Trash, X, Check } from "@phosphor-icons/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -90,6 +91,8 @@ export default function UsersPage() {
   const [currentUser, setCurrentUser] = useState<{ name: string; email: string; id: number } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [page, setPage] = useState(1);
+  const itemsPerPage = 5;
 
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -224,6 +227,13 @@ export default function UsersPage() {
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, roleFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / itemsPerPage));
+  const paginatedUsers = filteredUsers.slice((page - 1) * itemsPerPage, page * itemsPerPage);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       <AdminSidebar />
@@ -339,7 +349,7 @@ export default function UsersPage() {
                 </CardContent>
               </Card>
             ) : (
-              filteredUsers.map((user) => (
+              paginatedUsers.map((user) => (
                 <Card key={user.id}>
                   <CardContent className="p-6">
                     <div className="flex flex-col sm:flex-row sm:items-start gap-4">
@@ -451,6 +461,13 @@ export default function UsersPage() {
               ))
             )}
           </div>
+
+          <AdminPagination
+            page={page}
+            totalPages={totalPages}
+            onPrev={() => setPage((p) => Math.max(1, p - 1))}
+            onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+          />
         </main>
       </div>
 

@@ -18,6 +18,7 @@ export type AdminNavItem = {
 
 export const adminNavItems: AdminNavItem[] = [
   { label: "Аналитика", icon: ChartPie, path: "/analytics" },
+  { label: "Оценки", icon: ChartBar, path: "/analytics/grades" },
   { label: "Аналитика залов", icon: ChartBar, path: "/analytics/halls" },
   { label: "Аналитика преподавателей", icon: Users, path: "/analytics/teachers" },
   { label: "Аналитика групп", icon: Users, path: "/analytics/groups" },

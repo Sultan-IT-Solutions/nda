@@ -64,11 +64,18 @@ export default function Home() {
             )}
 
             {userRole === 'student' && (
-              <Link href="/schedule">
-                <Button className="w-full bg-green-600 hover:bg-green-700">
-                  Мое расписание
-                </Button>
-              </Link>
+              <>
+                <Link href="/schedule">
+                  <Button className="w-full bg-green-600 hover:bg-green-700">
+                    Мое расписание
+                  </Button>
+                </Link>
+                <Link href="/my-grades">
+                  <Button variant="outline" className="w-full">
+                    Мои оценки
+                  </Button>
+                </Link>
+              </>
             )}
           </div>
 

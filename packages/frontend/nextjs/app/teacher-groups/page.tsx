@@ -208,6 +208,13 @@ export default function TeacherGroupsPage() {
                   <Button
                     variant="ghost"
                     className="text-foreground/70 hover:text-foreground text-sm"
+                    onClick={() => router.push("/teacher-grades")}
+                  >
+                    Оценки
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="text-foreground/70 hover:text-foreground text-sm"
                     onClick={() => router.push("/profile")}
                   >
                     Профиль

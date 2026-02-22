@@ -16,6 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
@@ -27,6 +28,13 @@ import { buildLoginUrl, DEFAULT_SESSION_EXPIRED_MESSAGE } from "@/lib/auth"
 type SettingsState = {
   registrationEnabled: boolean
   trialLessonsEnabled: boolean
+  gradesScale: "0-5" | "0-100"
+  teacherEditEnabled: boolean
+}
+
+type PendingPatch = {
+  key: "registration" | "trial"
+  value: boolean
 }
 
 export default function AdminSettingsPage() {
@@ -41,14 +49,13 @@ export default function AdminSettingsPage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirmTitle, setConfirmTitle] = useState("")
   const [confirmDescription, setConfirmDescription] = useState("")
-  const [pendingPatch, setPendingPatch] = useState<{
-    key: "registration" | "trial"
-    value: boolean
-  } | null>(null)
+  const [pendingPatch, setPendingPatch] = useState<PendingPatch | null>(null)
 
   const [settings, setSettings] = useState<SettingsState>({
     registrationEnabled: true,
     trialLessonsEnabled: true,
+    gradesScale: "0-5",
+    teacherEditEnabled: true,
   })
 
   useEffect(() => {
@@ -81,6 +88,8 @@ export default function AdminSettingsPage() {
         setSettings({
           registrationEnabled: typeof s["registration.enabled"] === "boolean" ? s["registration.enabled"] : true,
           trialLessonsEnabled: typeof s["trial_lessons.enabled"] === "boolean" ? s["trial_lessons.enabled"] : true,
+          gradesScale: s["grades.scale"] === "0-100" ? "0-100" : "0-5",
+          teacherEditEnabled: typeof s["grades.teacher_edit_enabled"] === "boolean" ? s["grades.teacher_edit_enabled"] : true,
         })
       } catch (err) {
         const message = handleApiError(err)
@@ -127,6 +136,11 @@ export default function AdminSettingsPage() {
         ...prev,
         registrationEnabled: typeof s["registration.enabled"] === "boolean" ? s["registration.enabled"] : prev.registrationEnabled,
         trialLessonsEnabled: typeof s["trial_lessons.enabled"] === "boolean" ? s["trial_lessons.enabled"] : prev.trialLessonsEnabled,
+        gradesScale: s["grades.scale"] === "0-100" ? "0-100" : "0-5",
+        teacherEditEnabled:
+          typeof s["grades.teacher_edit_enabled"] === "boolean"
+            ? s["grades.teacher_edit_enabled"]
+            : prev.teacherEditEnabled,
       }))
       toast.success("Изменение применено")
     } catch (err) {
@@ -136,6 +150,46 @@ export default function AdminSettingsPage() {
       setUpdatingKey(null)
       setConfirmOpen(false)
       setPendingPatch(null)
+    }
+  }
+
+  const updateGradesScale = async (nextScale: "0-5" | "0-100") => {
+    if (settings.gradesScale === nextScale) return
+    setUpdatingKey("gradesScale")
+    try {
+      const res = await API.admin.updateSettings({ grades_scale: nextScale })
+      const s = res?.settings ?? {}
+      setSettings((prev) => ({
+        ...prev,
+        gradesScale: s["grades.scale"] === "0-100" ? "0-100" : "0-5",
+      }))
+      toast.success("Шкала оценивания обновлена")
+    } catch (err) {
+      const message = handleApiError(err)
+      toast.error(message)
+    } finally {
+      setUpdatingKey(null)
+    }
+  }
+
+  const toggleTeacherEdit = async (nextValue: boolean) => {
+    setUpdatingKey("teacherEdit")
+    try {
+      const res = await API.admin.updateSettings({ teacher_edit_enabled: nextValue })
+      const s = res?.settings ?? {}
+      setSettings((prev) => ({
+        ...prev,
+        teacherEditEnabled:
+          typeof s["grades.teacher_edit_enabled"] === "boolean"
+            ? s["grades.teacher_edit_enabled"]
+            : prev.teacherEditEnabled,
+      }))
+      toast.success("Настройки оценок обновлены")
+    } catch (err) {
+      const message = handleApiError(err)
+      toast.error(message)
+    } finally {
+      setUpdatingKey(null)
     }
   }
 
@@ -203,6 +257,54 @@ export default function AdminSettingsPage() {
               </div>
 
               <Separator />
+
+              <div className="flex flex-col gap-4">
+                <div>
+                  <Label>Оценки</Label>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    Управляйте шкалой и доступом преподавателей к редактированию.
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Label className="min-w-[160px]">Шкала оценивания</Label>
+                    <div className="flex gap-2">
+                      <Button
+                        variant={settings.gradesScale === "0-5" ? "default" : "outline"}
+                        onClick={() => updateGradesScale("0-5")}
+                        disabled={updatingKey !== null}
+                        type="button"
+                      >
+                        0–5
+                      </Button>
+                      <Button
+                        variant={settings.gradesScale === "0-100" ? "default" : "outline"}
+                        onClick={() => updateGradesScale("0-100")}
+                        disabled={updatingKey !== null}
+                        type="button"
+                      >
+                        0–100
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-6">
+                    <div>
+                      <Label htmlFor="teacherEditEnabled">Редактирование учителями</Label>
+                      <div className="text-sm text-muted-foreground mt-1">
+                        Разрешает учителям выставлять и изменять оценки.
+                      </div>
+                    </div>
+                    <Switch
+                      id="teacherEditEnabled"
+                      checked={settings.teacherEditEnabled}
+                      disabled={updatingKey !== null}
+                      onCheckedChange={(v) => toggleTeacherEdit(Boolean(v))}
+                    />
+                  </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
 

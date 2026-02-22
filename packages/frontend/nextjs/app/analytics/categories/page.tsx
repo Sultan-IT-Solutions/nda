@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { AdminSidebar } from "@/components/admin-sidebar"
 import { AdminHeader } from "@/components/admin-header"
+import { AdminPagination } from "@/components/admin-pagination"
 import { useSidebar } from "@/hooks/use-sidebar"
 import {
   Plus, PencilSimple, Trash, Tag, Palette,
@@ -69,6 +70,8 @@ export default function CategoriesPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
   const [user, setUser] = useState<any>(null)
+  const [page, setPage] = useState(1)
+  const itemsPerPage = 5
 
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
@@ -205,6 +208,10 @@ export default function CategoriesPage() {
     fetchData()
   }, [router])
 
+  useEffect(() => {
+    setPage(1)
+  }, [categories.length])
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -221,6 +228,9 @@ export default function CategoriesPage() {
     email: user?.email || "",
     initials: user?.name ? user.name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) : "АД"
   }
+
+  const totalPages = Math.max(1, Math.ceil(categories.length / itemsPerPage))
+  const paginatedCategories = categories.slice((page - 1) * itemsPerPage, page * itemsPerPage)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -309,7 +319,7 @@ export default function CategoriesPage() {
                 </Card>
               </div>
             ) : (
-              categories.map((category) => (
+              paginatedCategories.map((category) => (
                 <Card key={category.id} className="border border-gray-200 hover:shadow-md transition-shadow bg-white">
                   <div className="p-6">
                     <div className="flex items-start justify-between mb-4">
@@ -369,6 +379,13 @@ export default function CategoriesPage() {
               ))
             )}
           </div>
+
+          <AdminPagination
+            page={page}
+            totalPages={totalPages}
+            onPrev={() => setPage((p) => Math.max(1, p - 1))}
+            onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+          />
         </main>
       </div>
 

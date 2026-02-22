@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { API, handleApiError, logout } from "@/lib/api"
 import { AdminSidebar } from "@/components/admin-sidebar"
 import { AdminHeader } from "@/components/admin-header"
+import { AdminPagination } from "@/components/admin-pagination"
 import { useSidebar } from "@/hooks/use-sidebar"
 import {
   Clock,
@@ -96,6 +97,8 @@ export default function TeacherAnalyticsPage() {
   const [totalTeachers, setTotalTeachers] = useState(0)
   const [totalStudents, setTotalStudents] = useState(0)
   const [totalGroups, setTotalGroups] = useState(0)
+  const [page, setPage] = useState(1)
+  const itemsPerPage = 5
 
   const handleLogout = () => {
     logout()
@@ -211,6 +214,13 @@ export default function TeacherAnalyticsPage() {
 
     fetchData();
   }, [router, analyticsMode, lessonsWindowDays]);
+
+  useEffect(() => {
+    setPage(1)
+  }, [analyticsMode, lessonsWindowDays])
+
+  const totalPages = Math.max(1, Math.ceil(teachersData.length / itemsPerPage))
+  const paginatedTeachers = teachersData.slice((page - 1) * itemsPerPage, page * itemsPerPage)
 
   if (loading) {
     return (
@@ -358,7 +368,7 @@ export default function TeacherAnalyticsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {teachersData.map((teacher, index) => (
+                  {paginatedTeachers.map((teacher, index) => (
                     <TableRow key={teacher.teacherId} className="hover:bg-muted/50">
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
@@ -380,6 +390,12 @@ export default function TeacherAnalyticsPage() {
                   )}
                 </TableBody>
               </Table>
+              <AdminPagination
+                page={page}
+                totalPages={totalPages}
+                onPrev={() => setPage((p) => Math.max(1, p - 1))}
+                onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+              />
             </CardContent>
           </Card>
 

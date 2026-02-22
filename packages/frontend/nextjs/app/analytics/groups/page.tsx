@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { API, handleApiError, logout } from "@/lib/api"
 import { AdminSidebar } from "@/components/admin-sidebar"
 import { AdminHeader } from "@/components/admin-header"
+import { AdminPagination } from "@/components/admin-pagination"
 import { useSidebar } from "@/hooks/use-sidebar"
 import {
   Clock,
@@ -66,6 +67,8 @@ export default function GroupAnalyticsPage() {
   const [totalGroups, setTotalGroups] = useState(0)
   const [totalStudents, setTotalStudents] = useState(0)
   const [totalHours, setTotalHours] = useState(0)
+  const [page, setPage] = useState(1)
+  const itemsPerPage = 5
 
   const handleLogout = () => {
     logout()
@@ -159,6 +162,9 @@ export default function GroupAnalyticsPage() {
 
     fetchData();
   }, [router]);
+
+  const totalPages = Math.max(1, Math.ceil(groupsData.length / itemsPerPage))
+  const paginatedGroups = groupsData.slice((page - 1) * itemsPerPage, page * itemsPerPage)
 
   if (loading) {
     return (
@@ -280,7 +286,7 @@ export default function GroupAnalyticsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {groupsData.map((group, index) => (
+                  {paginatedGroups.map((group, index) => (
                     <TableRow key={group.groupId} className="hover:bg-muted/50">
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
@@ -304,6 +310,12 @@ export default function GroupAnalyticsPage() {
                   )}
                 </TableBody>
               </Table>
+              <AdminPagination
+                page={page}
+                totalPages={totalPages}
+                onPrev={() => setPage((p) => Math.max(1, p - 1))}
+                onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+              />
             </CardContent>
           </Card>
 

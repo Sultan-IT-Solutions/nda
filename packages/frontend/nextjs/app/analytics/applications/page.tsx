@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { AdminSidebar } from "@/components/admin-sidebar"
 import { AdminHeader } from "@/components/admin-header"
+import { AdminPagination } from "@/components/admin-pagination"
 import { useSidebar } from "@/hooks/use-sidebar"
 import {
   Calendar,
@@ -65,6 +66,8 @@ export default function ApplicationsPage() {
   const [requests, setRequests] = useState<RescheduleRequest[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const itemsPerPage = 5
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -109,6 +112,13 @@ export default function ApplicationsPage() {
       setIsLoading(false)
     }
   }
+
+  useEffect(() => {
+    setPage(1)
+  }, [requests.length])
+
+  const totalPages = Math.max(1, Math.ceil(requests.length / itemsPerPage))
+  const paginatedRequests = requests.slice((page - 1) * itemsPerPage, page * itemsPerPage)
 
   const handleRequestAction = async (
     requestId: number,
@@ -221,7 +231,7 @@ export default function ApplicationsPage() {
         
           {!isLoading && !error && requests.length > 0 && (
             <div className="space-y-6">
-              {requests.map((request) => (
+              {paginatedRequests.map((request) => (
                 <div
                   key={request.id}
                   className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-md transition-shadow"
@@ -344,6 +354,13 @@ export default function ApplicationsPage() {
               ))}
             </div>
           )}
+
+          <AdminPagination
+            page={page}
+            totalPages={totalPages}
+            onPrev={() => setPage((p) => Math.max(1, p - 1))}
+            onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+          />
         </div>
       </main>
     </div>

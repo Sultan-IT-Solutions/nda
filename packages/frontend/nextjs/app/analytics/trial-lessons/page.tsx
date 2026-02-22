@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { AdminHeader } from "@/components/admin-header"
 import { AdminSidebar } from "@/components/admin-sidebar"
+import { AdminPagination } from "@/components/admin-pagination"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -45,12 +46,27 @@ export default function TrialLessonsAdminPage() {
   const [expandedStudentId, setExpandedStudentId] = useState<number | null>(null)
   const [historyByStudentId, setHistoryByStudentId] = useState<Record<number, TrialUsage[]>>({})
   const [historyLoadingId, setHistoryLoadingId] = useState<number | null>(null)
+  const [page, setPage] = useState(1)
+  const itemsPerPage = 5
 
   const filteredStudents = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return students
     return students.filter((s) => s.name.toLowerCase().includes(q) || s.email.toLowerCase().includes(q))
   }, [students, search])
+
+  useEffect(() => {
+    setPage(1)
+  }, [search])
+
+  const totalPages = Math.max(1, Math.ceil(filteredStudents.length / itemsPerPage))
+  const paginatedStudents = filteredStudents.slice((page - 1) * itemsPerPage, page * itemsPerPage)
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages)
+    }
+  }, [page, totalPages])
 
   useEffect(() => {
     const load = async () => {
@@ -190,7 +206,7 @@ export default function TrialLessonsAdminPage() {
                           </TableCell>
                         </TableRow>
                       ) : (
-                        filteredStudents.map((s) => {
+                        paginatedStudents.map((s) => {
                           const canDecrement = s.trials_allowed > s.trials_used
                           const busy = updatingStudentId === s.id
                           const isExpanded = expandedStudentId === s.id
@@ -284,6 +300,14 @@ export default function TrialLessonsAdminPage() {
                   </Table>
                 </div>
               )}
+              {!loading && filteredStudents.length > 0 ? (
+                <AdminPagination
+                  page={page}
+                  totalPages={totalPages}
+                  onPrev={() => setPage((prev) => Math.max(1, prev - 1))}
+                  onNext={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                />
+              ) : null}
             </CardContent>
           </Card>
         </main>

@@ -8,6 +8,8 @@ from app.database import ensure_system_settings_schema
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "registration.enabled": True,
     "trial_lessons.enabled": True,
+    "grades.scale": "0-5",
+    "grades.teacher_edit_enabled": True,
 }
 
 PUBLIC_SETTINGS_KEYS = tuple(DEFAULT_SETTINGS.keys())

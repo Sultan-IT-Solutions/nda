@@ -7,6 +7,7 @@ import { buildLoginUrl, DEFAULT_SESSION_EXPIRED_MESSAGE } from "@/lib/auth";
 import { API, AUTH_REQUIRED_MESSAGE, handleApiError } from "@/lib/api";
 import { AdminSidebar } from "@/components/admin-sidebar";
 import { AdminHeader } from "@/components/admin-header";
+import { AdminPagination } from "@/components/admin-pagination";
 import { useSidebar } from "@/hooks/use-sidebar";
 import { Users, TrendUp, Calendar, X } from "@phosphor-icons/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -70,6 +71,8 @@ export default function StudentsAnalyticsPage() {
   const [user, setUser] = useState<{ name: string; email: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const itemsPerPage = 5;
 
   const removeStudentFromGroup = async (studentId: number, groupName: string) => {
     try {
@@ -172,6 +175,13 @@ export default function StudentsAnalyticsPage() {
       return a.name.localeCompare(b.name);
     });
 
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, selectedLetter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedStudents.length / itemsPerPage));
+  const paginatedStudents = filteredAndSortedStudents.slice((page - 1) * itemsPerPage, page * itemsPerPage);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       <AdminSidebar />
@@ -264,35 +274,14 @@ export default function StudentsAnalyticsPage() {
                 <p className="text-center text-gray-500">Загрузка...</p>
               </CardContent>
             </Card>
-          ) : students
-              .filter(student => {
-
-                return student.name.toLowerCase().includes(searchTerm.toLowerCase());
-              })
-              .sort((a, b) => {
-                if (a.isActive !== b.isActive) {
-                  return a.isActive ? -1 : 1;
-                }
-                return a.name.localeCompare(b.name);
-              }).length === 0 ? (
+          ) : filteredAndSortedStudents.length === 0 ? (
             <Card>
               <CardContent className="py-8">
                 <p className="text-center text-gray-500">Нет учеников</p>
               </CardContent>
             </Card>
           ) : (
-            students
-              .filter(student => {
-
-                return student.name.toLowerCase().includes(searchTerm.toLowerCase());
-              })
-              .sort((a, b) => {
-                if (a.isActive !== b.isActive) {
-                  return a.isActive ? -1 : 1;
-                }
-                return a.name.localeCompare(b.name);
-              })
-              .map((student) => (
+            paginatedStudents.map((student) => (
               <Card key={student.id} className={!student.isActive ? "opacity-60" : ""}>
                 <CardContent className="p-6">
                   <div className="flex items-start gap-4">
@@ -399,6 +388,13 @@ export default function StudentsAnalyticsPage() {
             ))
           )}
         </div>
+
+        <AdminPagination
+          page={page}
+          totalPages={totalPages}
+          onPrev={() => setPage((p) => Math.max(1, p - 1))}
+          onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+        />
       </main>
     </div>
     </div>

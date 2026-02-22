@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     DB_PORT: int = 5432
     DB_NAME: str = "postgres"
     DB_USER: str = "postgres"
-    DB_PASSWORD: str = "postgres"
+    DB_PASSWORD: str | None = None
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001"
 
     ENABLE_CORS: bool = True
@@ -25,7 +25,8 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
 
     model_config = {
-        "env_file": os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+        "env_file": os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"),
+        "extra": "ignore",
     }
 
 

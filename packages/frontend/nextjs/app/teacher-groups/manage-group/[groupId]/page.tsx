@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Users, Clock, MapPin, Calendar, BookOpen, Settings, BarChart, Loader2, ArrowLeft } from 'lucide-react';
 import TeacherAttendanceManager from '@/components/teacher-attendance-manager';
 import { API } from '@/lib/api';
+import { GradesTab } from './grades-tab';
 
 interface Student {
   id: number;
@@ -213,7 +214,7 @@ export default function ManageGroupPage() {
 
       <div className="container mx-auto px-4 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <BarChart className="w-4 h-4" />
               Обзор
@@ -225,6 +226,10 @@ export default function ManageGroupPage() {
             <TabsTrigger value="notes" className="flex items-center gap-2">
               <BookOpen className="w-4 h-4" />
               Заметки
+            </TabsTrigger>
+            <TabsTrigger value="grades" className="flex items-center gap-2">
+              <Settings className="w-4 h-4" />
+              Оценки
             </TabsTrigger>
           </TabsList>
 
@@ -355,6 +360,23 @@ export default function ManageGroupPage() {
                 </Button>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="grades" className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold">Оценки</div>
+                <div className="text-sm text-muted-foreground">Рекомендуем работать в отдельном разделе</div>
+              </div>
+              <Button onClick={() => router.push(`/teacher-grades?groupId=${groupId}`)}>
+                Открыть журнал оценок
+              </Button>
+            </div>
+
+            <GradesTab
+              groupId={Number(groupId)}
+              students={(students || []).map((s) => ({ id: s.id, name: s.name }))}
+              lessons={lessons} />
           </TabsContent>
         </Tabs>
       </div>

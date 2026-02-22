@@ -19,6 +19,7 @@ async def connect_to_database():
                 dsn=settings.DATABASE_URL,
                 min_size=1,
                 max_size=5,
+                statement_cache_size=0,
             )
         else:
             ssl_ctx = None
@@ -36,7 +37,8 @@ async def connect_to_database():
                 password=settings.DB_PASSWORD or None,
                 ssl=ssl_ctx,
                 min_size=1,
-                max_size=5
+                max_size=5,
+                statement_cache_size=0,
             )
         target = "DATABASE_URL" if getattr(settings, "DATABASE_URL", None) else f"{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
         print(f"Connected to PostgreSQL successfully ({target})")

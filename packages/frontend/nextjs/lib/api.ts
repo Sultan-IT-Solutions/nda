@@ -174,8 +174,6 @@ export async function apiRequest<T = any>(
         errorMessage = 'Пожалуйста, заполните все поля';
       } else if (errorMessage.includes('overlap') || errorMessage.includes('занятия')) {
         errorMessage = 'Время занятия пересекается с уже существующим занятием. Выберите другое время.';
-      } else {
-        errorMessage = 'Ошибка в данных. Проверьте введенную информацию';
       }
     } else if (response.status === 422) {
       // ignoring
@@ -236,8 +234,6 @@ async function apiRequestOptionalAuth<T = any>(
         errorMessage = 'Пожалуйста, заполните все поля'
       } else if (errorMessage.includes('overlap') || errorMessage.includes('занятия')) {
         errorMessage = 'Время занятия пересекается с уже существующим занятием. Выберите другое время.'
-      } else {
-        errorMessage = 'Ошибка в данных. Проверьте введенную информацию'
       }
     } else if (response.status === 422) {
       errorMessage = 'Ошибка валидации. Проверьте правильность заполнения полей'
@@ -414,6 +410,37 @@ export const API = {
       apiRequest(`/admin/teachers/${teacherId}/groups/${groupId}`, { method: 'DELETE' }),
   },
 
+  grades: {
+    upsert: (data: {
+      attendance_record_id?: number | null
+      group_id?: number | null
+      student_id?: number | null
+      lesson_id?: number | null
+      value: number
+      comment?: string | null
+      grade_date?: string | null
+    }) =>
+      apiRequest('/grades', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    delete: (data: {
+      attendance_record_id?: number | null
+      group_id?: number | null
+      student_id?: number | null
+      lesson_id?: number | null
+    }) =>
+      apiRequest('/grades', {
+        method: 'DELETE',
+        body: JSON.stringify(data),
+      }),
+
+    teacherListByGroup: (groupId: number) => apiRequest(`/grades/teacher/group/${groupId}`),
+    adminListByGroup: (groupId: number) => apiRequest(`/grades/admin/group/${groupId}`),
+    studentMy: () => apiRequest('/grades/student/me'),
+  },
+
   halls: {
     getAll: () => apiRequest('/admin/halls'),
     getAnalytics: () => apiRequest('/admin/analytics/halls'),
@@ -483,6 +510,8 @@ export const API = {
     getStudentsAnalytics: () => apiRequest('/admin/analytics/students'),
     getGroupDetails: (groupId: number) => apiRequest(`/admin/groups/${groupId}`),
     getGroups: () => apiRequest('/admin/groups'),
+    getGroupLessonsAttendance: (groupId: number) =>
+      apiRequest(`/admin/groups/${groupId}/lessons-attendance`),
     getHalls: () => apiRequest('/admin/halls'),
     getTeachers: () => apiRequest('/admin/teachers'),
     getStudents: () => apiRequest('/admin/students'),
@@ -540,6 +569,8 @@ export const API = {
     updateSettings: (data: {
       registration_enabled?: boolean
       trial_lessons_enabled?: boolean
+      grades_scale?: '0-5' | '0-100'
+      teacher_edit_enabled?: boolean
     }) =>
       apiRequest('/admin/settings', {
         method: 'PATCH',
