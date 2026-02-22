@@ -246,7 +246,7 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
 
             return (
               <div key={lesson.id} className="bg-white border border-gray-200 rounded-lg p-6">
-                <div className="flex items-start justify-between mb-6">
+                <div className="flex flex-col gap-4 mb-6 lg:flex-row lg:items-start lg:justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-3">
                       <h3 className="text-xl font-semibold text-gray-900">{lesson.class_name}</h3>
@@ -301,10 +301,10 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
                     </div>
                   </div>
 
-                  <div className="flex gap-3">
+                  <div className="flex flex-col sm:flex-row flex-wrap gap-3 w-full lg:w-auto">
                     <Button
                       size="lg"
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2"
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 w-full sm:w-auto"
                       onClick={() => handleMarkAttendance(lesson)}
                     >
                       <Play size={16} className="mr-2" />
@@ -313,7 +313,7 @@ export default function TeacherAttendanceManager({ groupId }: TeacherAttendanceM
                     <Button
                       size="lg"
                       variant="outline"
-                      className="border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2"
+                      className="border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2 w-full sm:w-auto"
                       onClick={() => handleRescheduleLesson(lesson)}
                     >
                       <Calendar size={16} className="mr-2" />

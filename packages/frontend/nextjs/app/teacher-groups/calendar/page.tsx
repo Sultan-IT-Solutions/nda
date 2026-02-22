@@ -190,15 +190,15 @@ export default function TeacherCalendarPage() {
       <TeacherHeader user={user} onLogout={handleLogout} />
 
       <main className="max-w-7xl mx-auto p-6">
-        <div className="flex items-start justify-between gap-4 mb-6">
+  <div className="flex flex-col gap-4 mb-6 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h1 className="text-3xl font-bold mb-1">Расписание</h1>
             <p className="text-gray-600">Календарь преподавателя</p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-3 w-full sm:flex-row sm:flex-wrap sm:items-center lg:w-auto">
             <Select value={mode} onValueChange={(v) => setMode(v as any)}>
-              <SelectTrigger className="w-[240px] bg-white">
+              <SelectTrigger className="w-full sm:w-[240px] bg-white">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -209,7 +209,7 @@ export default function TeacherCalendarPage() {
 
             {mode === "halls" && occupancy && (
               <Select value={selectedHallId} onValueChange={setSelectedHallId}>
-                <SelectTrigger className="w-[240px] bg-white">
+                <SelectTrigger className="w-full sm:w-[240px] bg-white">
                   <SelectValue placeholder="Выберите зал" />
                 </SelectTrigger>
                 <SelectContent>
