@@ -87,6 +87,8 @@ ENV/
 *.sqlite
 *.sqlite3
 
+schema.sql
+
 # OS
 .DS_Store
 .AppleDouble
