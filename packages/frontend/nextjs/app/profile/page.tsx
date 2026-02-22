@@ -2,24 +2,18 @@
 
 import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { User, SignOut } from "@phosphor-icons/react"
-import { NotificationBell } from "@/components/notification-bell"
+import { User } from "@phosphor-icons/react"
+import { TeacherHeader } from "@/components/teacher-header"
+import { StudentHeader } from "@/components/student-header"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Envelope, Phone, Calendar, TrendUp, MapPin, Clock, CheckCircle, Warning, CalendarBlank, XCircle, CaretLeft, CaretRight, CaretDown } from "@phosphor-icons/react"
+import { Envelope, Phone, Calendar, TrendUp, MapPin, Clock, CheckCircle, Warning, CalendarBlank, XCircle, CaretLeft, CaretRight, CaretDown, ChartBar } from "@phosphor-icons/react"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from 'sonner'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { buildLoginUrl, DEFAULT_SESSION_EXPIRED_MESSAGE } from "@/lib/auth"
 import { API, AUTH_REQUIRED_MESSAGE, handleApiError, logout } from "@/lib/api"
 
@@ -87,6 +81,26 @@ interface TeacherGroupApi {
   notes?: string | null
 }
 
+interface GradeItem {
+  id: number
+  group_id: number
+  group_name: string
+  attendance_record_id?: number | null
+  lesson_id?: number | null
+  value: number
+  comment?: string | null
+  grade_date?: string | null
+  updated_at?: string | null
+  teacher_name?: string | null
+}
+
+interface LessonAttendanceItem {
+  lesson_id: number
+  group_id: number
+  start_time: string | null
+  attendance_id?: number | null
+}
+
 export default function ProfilePage() {
   const router = useRouter()
   const pathname = usePathname()
@@ -97,6 +111,7 @@ export default function ProfilePage() {
   const [groups, setGroups] = useState<GroupData[]>([])
   const [lessonAttendance, setLessonAttendance] = useState<any[]>([])
   const [attendanceData, setAttendanceData] = useState<any[]>([])
+  const [grades, setGrades] = useState<GradeItem[]>([])
   const [currentGroupPage, setCurrentGroupPage] = useState(0)
   const groupsPerPage = 3
   const [currentSubscriptionPage, setCurrentSubscriptionPage] = useState(0)
@@ -106,6 +121,7 @@ export default function ProfilePage() {
   const [lessonsExpanded, setLessonsExpanded] = useState(false)
   const [selectedGroupFilter, setSelectedGroupFilter] = useState<number | null>(null)
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'P' | 'L' | 'E' | 'A'>('all')
+  const [openGradesGroupId, setOpenGradesGroupId] = useState<number | null>(null)
 
   const handleLogout = () => {
     logout()
@@ -136,6 +152,12 @@ export default function ProfilePage() {
             const attendanceInfo = await API.students.getMyAttendance()
             setLessonAttendance(attendanceInfo.lessons || [])
             setAttendanceData(attendanceInfo.attendance || [])
+          } catch (err) {
+            }
+
+          try {
+            const gradesInfo = await API.grades.studentMy()
+            setGrades(gradesInfo?.grades || [])
           } catch (err) {
             }
         } else if (userData.user.role === 'teacher') {
@@ -253,6 +275,36 @@ export default function ProfilePage() {
 
   const isStudent = user?.role === 'student'
   const isTeacher = user?.role === 'teacher'
+
+  const gradesByAttendanceId = new Map<number, GradeItem>()
+  const gradesByLessonId = new Map<number, GradeItem>()
+  for (const grade of grades) {
+    if (grade.attendance_record_id) gradesByAttendanceId.set(grade.attendance_record_id, grade)
+    if (grade.lesson_id) gradesByLessonId.set(grade.lesson_id, grade)
+  }
+
+  const attendanceLessons = (lessonAttendance as LessonAttendanceItem[])
+    .filter((lesson) => lesson && typeof lesson.group_id === "number")
+    .map((lesson) => ({
+      ...lesson,
+      start_time: lesson.start_time ?? null,
+    }))
+
+  const formatLessonDateTime = (value: string | null, durationMinutes?: number | null) => {
+    if (!value) return "—"
+    const d = new Date(value)
+    if (Number.isNaN(d.getTime())) return "—"
+    const datePart = d.toLocaleDateString("ru-RU", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    })
+    if (!durationMinutes) return datePart
+    const end = new Date(d.getTime() + durationMinutes * 60000)
+    const startTime = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })
+    const endTime = end.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })
+    return `${datePart} · ${startTime}-${endTime}`
+  }
 
   const formatTrialSelectedLessonPretty = (value: string | null | undefined): string | null => {
     if (!value) return null
@@ -475,99 +527,11 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <nav className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
-              <Button
-                variant="ghost"
-                className="text-foreground/70 hover:text-foreground text-sm"
-                onClick={() => router.push("/")}
-              >
-                Главная
-              </Button>
-              {user?.role === 'teacher' ? (
-                <>
-                  <Button
-                    variant="ghost"
-                    className="text-foreground/70 hover:text-foreground text-sm"
-                    onClick={() => router.push("/teacher-groups")}
-                  >
-                    Мои группы
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="text-foreground/70 hover:text-foreground text-sm"
-                    onClick={() => router.push("/teacher-groups/calendar")}
-                  >
-                    Расписание
-                  </Button>
-                  <Button className="bg-[#FF6B35] hover:bg-[#FF6B35]/90 text-white text-sm rounded-lg px-6">
-                    Профиль
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button
-                    variant="ghost"
-                    className="text-foreground/70 hover:text-foreground text-sm"
-                    onClick={() => router.push("/schedule")}
-                  >
-                    Расписание групп
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="text-foreground/70 hover:text-foreground text-sm"
-                    onClick={() => router.push("/my-groups")}
-                  >
-                    Мои группы
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="text-foreground/70 hover:text-foreground text-sm"
-                    onClick={() => router.push("/trial")}
-                  >
-                    Пробный урок
-                  </Button>
-                  <Button className="bg-[#FF6B35] hover:bg-[#FF6B35]/90 text-white text-sm rounded-lg px-6">
-                    Профиль
-                  </Button>
-                </>
-              )}
-            </div>
-            <div className="flex items-center gap-4">
-              <NotificationBell accentColor="bg-[#FF6B35]" />
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Уведомления</span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className="focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-full">
-                      <Avatar className="h-9 w-9 cursor-pointer hover:opacity-80 transition-opacity">
-                        <AvatarFallback className="bg-gradient-to-br from-purple-500 to-pink-500 text-white text-xs font-semibold">
-                          {profile.initials}
-                        </AvatarFallback>
-                      </Avatar>
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuLabel>
-                      <div className="flex flex-col space-y-1">
-                        <p className="text-sm font-medium leading-none">{profile.name}</p>
-                        <p className="text-xs leading-none text-muted-foreground">{profile.email}</p>
-                      </div>
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-destructive focus:text-destructive">
-                      <SignOut size={16} className="mr-2" />
-                      Выйти
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
-          </nav>
-        </div>
-      </header>
+      {user?.role === 'teacher' ? (
+        <TeacherHeader user={user} onLogout={handleLogout} activePath="/profile" />
+      ) : (
+        <StudentHeader user={user} onLogout={handleLogout} activePath="/profile" />
+      )}
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="mb-8">
@@ -818,6 +782,107 @@ export default function ProfilePage() {
             )}
           </div>
         </Card>
+
+        {isStudent && (
+          <Card className="p-6 mb-8 border-0 shadow-sm bg-card/80">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <ChartBar size={20} className="text-primary" weight="duotone" />
+                </div>
+                <h2 className="text-base font-semibold text-foreground">Оценки</h2>
+              </div>
+            </div>
+
+            {grades.length === 0 ? (
+              <div className="text-sm text-muted-foreground">Оценок пока нет</div>
+            ) : (
+              <div className="space-y-6">
+                {groups.map((group) => {
+                  const groupLessons = attendanceLessons
+                    .filter((lesson) => lesson.group_id === group.id)
+                    .sort((a, b) => new Date(a.start_time ?? "").getTime() - new Date(b.start_time ?? "").getTime())
+
+                  const groupGrades = grades.filter((grade) => grade.group_id === group.id)
+                  const groupValues = groupGrades
+                    .map((grade) => (Number.isFinite(grade.value) ? grade.value : null))
+                    .filter((value): value is number => value !== null)
+                  const groupAverage = groupValues.length > 0
+                    ? (groupValues.reduce((sum, value) => sum + value, 0) / groupValues.length).toFixed(2)
+                    : null
+
+                  const isOpen = openGradesGroupId === group.id
+
+                  return (
+                    <div key={group.id} className="rounded-2xl border border-border/50 bg-white/60 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setOpenGradesGroupId((prev) => (prev === group.id ? null : group.id))}
+                        className="w-full px-4 py-3 border-b border-border/60 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-left"
+                      >
+                        <div>
+                          <div className="text-sm font-semibold">{group.name}</div>
+                          <div className="text-xs text-muted-foreground">Журнал оценок</div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-sm font-semibold text-primary">
+                            Средняя: {groupAverage ?? "—"}
+                          </div>
+                          <CaretDown
+                            size={16}
+                            className={`text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
+                          />
+                        </div>
+                      </button>
+
+                      {isOpen ? (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Дата занятия</TableHead>
+                              <TableHead className="text-right">Оценка</TableHead>
+                              <TableHead>Комментарий</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {groupLessons.length === 0 ? (
+                              <TableRow>
+                                <TableCell colSpan={3} className="text-center text-sm text-muted-foreground">
+                                  Нет занятий
+                                </TableCell>
+                              </TableRow>
+                            ) : (
+                              groupLessons.map((lesson: any) => {
+                                const attendanceId = lesson.attendance_id ?? lesson.id
+                                const grade = attendanceId
+                                  ? gradesByAttendanceId.get(attendanceId) ?? gradesByLessonId.get(lesson.lesson_id)
+                                  : gradesByLessonId.get(lesson.lesson_id)
+                                const commentText = grade?.comment?.trim()
+                                return (
+                                  <TableRow key={`${group.id}:${lesson.lesson_id}`}>
+                                    <TableCell>
+                                      {formatLessonDateTime(lesson.start_time, lesson.duration_minutes)}
+                                    </TableCell>
+                                    <TableCell className="text-right font-semibold text-primary">
+                                      {grade ? grade.value : "—"}
+                                    </TableCell>
+                                    <TableCell className="text-muted-foreground whitespace-pre-wrap">
+                                      {commentText ? commentText : "—"}
+                                    </TableCell>
+                                  </TableRow>
+                                )
+                              })
+                            )}
+                          </TableBody>
+                        </Table>
+                      ) : null}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </Card>
+        )}
 
         {isStudent && (
         <Card data-tour="profile-attendance" className="p-6 border-0 shadow-sm bg-card/80">

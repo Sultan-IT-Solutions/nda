@@ -4,14 +4,12 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, Clock, MapPin, Calendar, BookOpen, Settings, BarChart, Loader2, ArrowLeft } from 'lucide-react';
+import { Users, Clock, MapPin, Calendar, BarChart, Loader2, ArrowLeft } from 'lucide-react';
 import TeacherAttendanceManager from '@/components/teacher-attendance-manager';
-import { API } from '@/lib/api';
-import { GradesTab } from './grades-tab';
+import { TeacherHeader } from '@/components/teacher-header';
+import { API, logout } from '@/lib/api';
 
 interface Student {
   id: number;
@@ -71,7 +69,7 @@ export default function ManageGroupPage() {
   const [groupDetails, setGroupDetails] = useState<GroupDetails | null>(null);
   const [loading, setLoading] = useState(false);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
-  const [groupNotes, setGroupNotes] = useState('');
+  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
 
   const formatTrialSelectedLessonPretty = (value: string | null | undefined): string | null => {
     if (!value) return null
@@ -105,6 +103,24 @@ export default function ManageGroupPage() {
     }
   }, [groupId]);
 
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const userData = await API.users.me();
+        setUser(userData.user ?? null);
+      } catch {
+        setUser(null);
+      }
+    };
+
+    loadUser();
+  }, []);
+
+  const handleLogout = () => {
+    logout();
+    router.push('/login');
+  };
+
   const fetchGroupData = async () => {
     setLoading(true);
     try {
@@ -118,7 +134,6 @@ export default function ManageGroupPage() {
       setStudents(studentsData.students || [])
       setGroupStats(statsData.stats || null)
       setGroupDetails(groupData)
-      setGroupNotes(groupData.notes || '')
       setLessons(lessonsData.lessons || [])
     } catch (error) {
       console.error('Error fetching group data:', error);
@@ -127,15 +142,6 @@ export default function ManageGroupPage() {
       setLessons([]);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSaveNotes = async () => {
-    try {
-      await API.teachers.saveGroupNotes(Number(groupId), groupNotes)
-      alert('Заметки сохранены!');
-    } catch (error) {
-      console.error('Error saving notes:', error);
     }
   };
 
@@ -186,6 +192,7 @@ export default function ManageGroupPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <TeacherHeader user={user} onLogout={handleLogout} activePath="/teacher-groups" />
       <div className="bg-white border-b">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
@@ -214,7 +221,7 @@ export default function ManageGroupPage() {
 
       <div className="container mx-auto px-4 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <BarChart className="w-4 h-4" />
               Обзор
@@ -222,14 +229,6 @@ export default function ManageGroupPage() {
             <TabsTrigger value="attendance" className="flex items-center gap-2">
               <Clock className="w-4 h-4" />
               Посещаемость
-            </TabsTrigger>
-            <TabsTrigger value="notes" className="flex items-center gap-2">
-              <BookOpen className="w-4 h-4" />
-              Заметки
-            </TabsTrigger>
-            <TabsTrigger value="grades" className="flex items-center gap-2">
-              <Settings className="w-4 h-4" />
-              Оценки
             </TabsTrigger>
           </TabsList>
 
@@ -335,49 +334,6 @@ export default function ManageGroupPage() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="notes" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Заметки к группе</CardTitle>
-                <CardDescription>
-                  Добавьте заметки о группе, особенности студентов, планы на занятия...
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="groupNotes">Заметки</Label>
-                  <Textarea
-                    id="groupNotes"
-                    value={groupNotes}
-                    onChange={(e) => setGroupNotes(e.target.value)}
-                    placeholder="Введите ваши заметки..."
-                    rows={12}
-                    className="mt-1"
-                  />
-                </div>
-                <Button onClick={handleSaveNotes} className="w-full">
-                  Сохранить заметки
-                </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="grades" className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div>
-                <div className="text-lg font-semibold">Оценки</div>
-                <div className="text-sm text-muted-foreground">Рекомендуем работать в отдельном разделе</div>
-              </div>
-              <Button onClick={() => router.push(`/teacher-grades?groupId=${groupId}`)}>
-                Открыть журнал оценок
-              </Button>
-            </div>
-
-            <GradesTab
-              groupId={Number(groupId)}
-              students={(students || []).map((s) => ({ id: s.id, name: s.name }))}
-              lessons={lessons} />
-          </TabsContent>
         </Tabs>
       </div>
     </div>

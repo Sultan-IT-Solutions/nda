@@ -255,9 +255,14 @@ export default function AdminSettingsPage() {
                   onCheckedChange={(v) => openToggleConfirm("trial", Boolean(v))}
                 />
               </div>
+            </CardContent>
+          </Card>
 
-              <Separator />
-
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Оценивание</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
               <div className="flex flex-col gap-4">
                 <div>
                   <Label>Оценки</Label>

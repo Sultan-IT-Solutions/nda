@@ -9,8 +9,13 @@ import { useSidebar } from "@/hooks/use-sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
+import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
 import { API, handleApiError } from "@/lib/api"
 import { buildLoginUrl, DEFAULT_SESSION_EXPIRED_MESSAGE } from "@/lib/auth"
+import { toast } from "sonner"
+import * as XLSX from "xlsx"
 
 type GroupListItem = {
   groupId: number
@@ -68,6 +73,8 @@ export default function AdminGradesPage() {
   const [studentQuery, setStudentQuery] = useState("")
   const [page, setPage] = useState(1)
   const itemsPerPage = 5
+  const [gradesScale, setGradesScale] = useState<"0-5" | "0-100">("0-5")
+  const [exportFilteredOnly, setExportFilteredOnly] = useState(false)
 
   const loadGroupContext = async (gid: number) => {
     setLoading(true)
@@ -121,9 +128,14 @@ export default function AdminGradesPage() {
           return
         }
 
-        const groupsRes = await API.admin.getGroupsAnalytics()
+        const [groupsRes, settingsRes] = await Promise.all([
+          API.admin.getGroupsAnalytics(),
+          API.admin.getSettings(),
+        ])
         const items = (groupsRes?.groups ?? []) as GroupListItem[]
         setGroups(items)
+        const scale = settingsRes?.settings?.["grades.scale"] === "0-100" ? "0-100" : "0-5"
+        setGradesScale(scale)
 
         const qs = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null
         const gidRaw = qs?.get("groupId")
@@ -206,15 +218,101 @@ export default function AdminGradesPage() {
     return `${datePart}, ${startTime} - ${endTime}`
   }
 
-  const getAverageForStudent = (studentId: number) => {
+  const getAverageValueForStudent = (studentId: number) => {
     const values: number[] = []
     for (const lesson of sortedLessons) {
       const grade = gradeByLessonAndStudent.get(`${lesson.id}:${studentId}`)
       if (!grade) continue
       if (Number.isFinite(grade.value)) values.push(grade.value)
     }
-    if (values.length === 0) return "—"
-    return (values.reduce((sum, v) => sum + v, 0) / values.length).toFixed(2)
+    if (values.length === 0) return null
+    return values.reduce((sum, v) => sum + v, 0) / values.length
+  }
+
+  const getAverageForStudent = (studentId: number) => {
+    const avg = getAverageValueForStudent(studentId)
+    if (avg === null) return "—"
+    return avg.toFixed(2)
+  }
+
+  const toScale100 = (value: number) => (gradesScale === "0-5" ? value * 20 : value)
+
+  const getExportStudents = () => {
+    if (!exportFilteredOnly) return students
+    const q = studentQuery.trim().toLowerCase()
+    if (!q) return filteredStudents
+    return students.filter((student) => student.name.toLowerCase().includes(q))
+  }
+
+  const buildExportSheet = (exportStudents: LessonStudent[]) => {
+    const headerRow = [
+      "Ученик",
+      ...sortedLessons.map((lesson) => formatLessonLabel(lesson)),
+      "Средняя",
+      "Средняя (0-100)",
+    ]
+
+    const rows = exportStudents.map((student) => {
+      const row: Array<string | number> = [student.name]
+      for (const lesson of sortedLessons) {
+        const grade = gradeByLessonAndStudent.get(`${lesson.id}:${student.id}`)
+        row.push(grade ? grade.value : "")
+      }
+      const avg = getAverageValueForStudent(student.id)
+      row.push(avg === null ? "" : Number(avg.toFixed(2)))
+      row.push(avg === null ? "" : Number(toScale100(avg).toFixed(2)))
+      return row
+    })
+
+    return XLSX.utils.aoa_to_sheet([headerRow, ...rows])
+  }
+
+  const ensureExportable = () => {
+    if (!selectedGroup) {
+      toast.error("Выберите группу для экспорта")
+      return null
+    }
+
+    if (students.length === 0 || sortedLessons.length === 0) {
+      toast.error("Нет данных для экспорта")
+      return null
+    }
+
+    const exportStudents = getExportStudents()
+    if (exportStudents.length === 0) {
+      toast.error("Нет учеников для экспорта")
+      return null
+    }
+
+    return {
+      exportStudents,
+      safeGroupName: selectedGroup.groupName.replace(/\s+/g, "_"),
+    }
+  }
+
+  const handleExportXlsx = () => {
+    const exportData = ensureExportable()
+    if (!exportData) return
+
+    const worksheet = buildExportSheet(exportData.exportStudents)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Оценки")
+    XLSX.writeFile(workbook, `Оценки_${exportData.safeGroupName}.xlsx`)
+  }
+
+  const handleExportCsv = () => {
+    const exportData = ensureExportable()
+    if (!exportData) return
+
+    const worksheet = buildExportSheet(exportData.exportStudents)
+    const csv = XLSX.utils.sheet_to_csv(worksheet)
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `Оценки_${exportData.safeGroupName}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -295,15 +393,32 @@ export default function AdminGradesPage() {
           ) : (
             <Card>
               <CardHeader>
-                <div className="space-y-1">
-                  <CardTitle>Журнал — {selectedGroup.groupName}</CardTitle>
-                  <div className="text-sm text-muted-foreground">
-                    {selectedGroup.teacherName ? `Преподаватель: ${selectedGroup.teacherName}` : ""}
-                    {selectedGroup.hallName ? ` · Зал: ${selectedGroup.hallName}` : ""}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1">
+                    <CardTitle>Журнал — {selectedGroup.groupName}</CardTitle>
+                    <div className="text-sm text-muted-foreground">
+                      {selectedGroup.teacherName ? `Преподаватель: ${selectedGroup.teacherName}` : ""}
+                      {selectedGroup.hallName ? ` · Зал: ${selectedGroup.hallName}` : ""}
+                    </div>
+                  </div>
+                  <div className="flex flex-col sm:items-end gap-2">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <span>Шкала:</span>
+                      <Badge variant="secondary">{gradesScale}</Badge>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button variant="outline" onClick={handleExportXlsx} type="button">
+                        Экспорт в Excel
+                      </Button>
+                      <Button variant="outline" onClick={handleExportCsv} type="button">
+                        Экспорт в CSV
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
+                <div className="mb-4" />
                 <div className="mb-4 max-w-xs">
                   <Input
                     value={studentQuery}

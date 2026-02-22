@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { SignOut, User, MapPin, Clock, CalendarBlank, Tag } from "@phosphor-icons/react"
-import { NotificationBell } from "@/components/notification-bell"
+import { User, MapPin, Clock, CalendarBlank, Tag } from "@phosphor-icons/react"
+import { StudentHeader } from "@/components/student-header"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -17,14 +16,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import {
   Select,
   SelectContent,
@@ -335,85 +326,9 @@ export default function SchedulePage() {
     )
   }
 
-  const profile = {
-    name: user?.name || "Не указано",
-    initials: user?.name ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : "НИ",
-    email: user?.email || "Не указано",
-  }
-
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <nav className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
-              <Button
-                variant="ghost"
-                className="text-foreground/70 hover:text-foreground text-sm"
-                onClick={() => router.push("/")}
-              >
-                Главная
-              </Button>
-              <Button
-                className="bg-[#FF6B35] hover:bg-[#FF6B35]/90 text-white text-sm rounded-lg px-6"
-              >
-                Расписание групп
-              </Button>
-              <Button
-                variant="ghost"
-                className="text-foreground/70 hover:text-foreground text-sm"
-                onClick={() => router.push("/my-groups")}
-              >
-                Мои группы
-              </Button>
-              <Button
-                variant="ghost"
-                className="text-foreground/70 hover:text-foreground text-sm"
-                onClick={() => router.push("/trial")}
-              >
-                Пробный урок
-              </Button>
-              <Button
-                variant="ghost"
-                className="text-foreground/70 hover:text-foreground text-sm"
-                onClick={() => router.push("/profile")}
-              >
-                Профиль
-              </Button>
-            </div>
-            <div className="flex items-center gap-4">
-              <NotificationBell accentColor="bg-[#FF6B35]" />
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Уведомления</span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className="focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-full">
-                      <Avatar className="h-9 w-9 cursor-pointer hover:opacity-80 transition-opacity">
-                        <AvatarFallback className="bg-gradient-to-br from-purple-500 to-pink-500 text-white text-xs font-semibold">
-                          {profile.initials}
-                        </AvatarFallback>
-                      </Avatar>
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuLabel>
-                      <div className="flex flex-col space-y-1">
-                        <p className="text-sm font-medium leading-none">{profile.name}</p>
-                        <p className="text-xs leading-none text-muted-foreground">{profile.email}</p>
-                      </div>
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-destructive focus:text-destructive">
-                      <SignOut size={16} className="mr-2" />
-                      Выйти
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
-          </nav>
-        </div>
-      </header>
+      <StudentHeader user={user} onLogout={handleLogout} activePath="/schedule" />
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="mb-8">

@@ -133,7 +133,7 @@ async def admin_update_settings(data: UpdateSettingsRequest, user: dict = Depend
         updates += 1
 
     if updates == 0:
-        raise HTTPException(status_code=400, detail="No settings provided")
+        raise HTTPException(status_code=400, detail="Настройки не были изменены")
 
     if current_scale != next_scale and data.grades_scale is None:
         await _convert_grades_scale(pool, current_scale, next_scale)

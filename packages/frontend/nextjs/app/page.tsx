@@ -70,11 +70,6 @@ export default function Home() {
                     Мое расписание
                   </Button>
                 </Link>
-                <Link href="/my-grades">
-                  <Button variant="outline" className="w-full">
-                    Мои оценки
-                  </Button>
-                </Link>
               </>
             )}
           </div>

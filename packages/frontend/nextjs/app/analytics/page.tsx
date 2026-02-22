@@ -26,7 +26,7 @@ interface UserData {
 }
 
 interface DashboardStats {
-  totalStudents: number
+  totalUsers: number
   totalTeachers: number
   totalGroups: number
   totalHalls: number
@@ -41,7 +41,7 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true)
   const [user, setUser] = useState<UserData | null>(null)
   const [stats, setStats] = useState<DashboardStats>({
-    totalStudents: 0,
+    totalUsers: 0,
     totalTeachers: 0,
     totalGroups: 0,
     totalHalls: 0,
@@ -71,14 +71,17 @@ export default function AnalyticsPage() {
         }
 
         try {
-          const [hallsData, teachersData, groupsData] = await Promise.all([
+          const [hallsData, teachersData, groupsData, usersData] = await Promise.all([
             API.halls.getAll(),
             API.teachers.getAll(),
-            API.groups.getAll()
+            API.groups.getAll(),
+            API.users.getAll(),
           ])
 
+          const totalUsers = Array.isArray(usersData?.users) ? usersData.users.length : 0
+
           setStats({
-            totalStudents: groupsData.groups?.reduce((sum: number, g: any) => sum + (g.studentCount || 0), 0) || 0,
+            totalUsers,
             totalTeachers: teachersData.teachers?.length || 0,
             totalGroups: groupsData.groups?.length || 0,
             totalHalls: hallsData.halls?.length || 0,
@@ -112,7 +115,7 @@ export default function AnalyticsPage() {
   }
 
   const statCards = [
-    { title: "Всего учеников", value: stats.totalStudents, icon: Users, color: "text-blue-600", bgColor: "bg-blue-100" },
+  { title: "Всего пользователей", value: stats.totalUsers, icon: Users, color: "text-blue-600", bgColor: "bg-blue-100" },
     { title: "Преподавателей", value: stats.totalTeachers, icon: Users, color: "text-green-600", bgColor: "bg-green-100" },
     { title: "Активных групп", value: stats.activeGroups, icon: TrendUp, color: "text-purple-600", bgColor: "bg-purple-100" },
     { title: "Залов", value: stats.totalHalls, icon: House, color: "text-orange-600", bgColor: "bg-orange-100" },

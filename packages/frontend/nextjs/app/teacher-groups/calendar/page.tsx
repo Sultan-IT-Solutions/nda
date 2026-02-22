@@ -3,18 +3,8 @@
 import { useEffect, useMemo, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { CaretLeft, CaretRight, CalendarBlank } from "@phosphor-icons/react"
-import { SignOut, User } from "@phosphor-icons/react"
-import { NotificationBell } from "@/components/notification-bell"
+import { TeacherHeader } from "@/components/teacher-header"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
 import { buildLoginUrl, DEFAULT_SESSION_EXPIRED_MESSAGE } from "@/lib/auth"
@@ -197,94 +187,7 @@ export default function TeacherCalendarPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <nav className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
-              <Button
-                variant="ghost"
-                className="text-foreground/70 hover:text-foreground text-sm"
-                onClick={() => router.push("/")}
-              >
-                Главная
-              </Button>
-              <Button
-                variant="ghost"
-                className="text-foreground/70 hover:text-foreground text-sm"
-                onClick={() => router.push("/teacher-groups")}
-              >
-                Мои группы
-              </Button>
-              <Button
-                className="bg-[#FF6B35] hover:bg-[#FF6B35]/90 text-white text-sm rounded-lg px-6"
-                onClick={() => router.push("/teacher-groups/calendar")}
-              >
-                Расписание
-              </Button>
-              <Button
-                variant="ghost"
-                className="text-foreground/70 hover:text-foreground text-sm"
-                onClick={() => router.push("/teacher-grades")}
-              >
-                Оценки
-              </Button>
-              <Button
-                variant="ghost"
-                className="text-foreground/70 hover:text-foreground text-sm"
-                onClick={() => router.push("/profile")}
-              >
-                Профиль
-              </Button>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <NotificationBell accentColor="bg-[#FF6B35]" />
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Уведомления</span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className="focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-full">
-                      <Avatar className="h-9 w-9 cursor-pointer hover:opacity-80 transition-opacity">
-                        <AvatarFallback className="bg-gradient-to-br from-purple-500 to-pink-500 text-white text-xs font-semibold">
-                          {user?.name
-                            ? user.name
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")
-                                .toUpperCase()
-                                .slice(0, 2)
-                            : "U"}
-                        </AvatarFallback>
-                      </Avatar>
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuLabel>
-                      <div className="flex flex-col space-y-1">
-                        <p className="text-sm font-medium leading-none">{user?.name || "Пользователь"}</p>
-                        <p className="text-xs leading-none text-muted-foreground">{user?.email || ""}</p>
-                      </div>
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => router.push("/profile")}>
-                      <User className="mr-2 h-4 w-4" />
-                      <span>Профиль</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="text-red-600 focus:text-red-600"
-                      onClick={handleLogout}
-                    >
-                      <SignOut className="mr-2 h-4 w-4" />
-                      <span>Выйти</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
-          </nav>
-        </div>
-      </header>
+      <TeacherHeader user={user} onLogout={handleLogout} />
 
       <main className="max-w-7xl mx-auto p-6">
         <div className="flex items-start justify-between gap-4 mb-6">

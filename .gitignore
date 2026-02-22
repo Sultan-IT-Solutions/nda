@@ -92,3 +92,5 @@ ENV/
 .AppleDouble
 .LSOverride
 ._*
+
+*.sql/

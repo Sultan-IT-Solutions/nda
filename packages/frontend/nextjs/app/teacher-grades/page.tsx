@@ -2,14 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { API, AUTH_REQUIRED_MESSAGE, handleApiError } from "@/lib/api"
+import { API, AUTH_REQUIRED_MESSAGE, handleApiError, logout } from "@/lib/api"
 import { buildLoginUrl, DEFAULT_SESSION_EXPIRED_MESSAGE } from "@/lib/auth"
 import { toast } from "sonner"
+import { TeacherHeader } from "@/components/teacher-header"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Check, MessageSquarePlus, Pencil, X } from "lucide-react"
 
 type JournalCellDraft = {
   value: string
@@ -78,6 +80,12 @@ export default function TeacherGradesPage() {
   const [studentQuery, setStudentQuery] = useState("")
 
   const [students, setStudents] = useState<Student[]>([])
+
+  const handleLogout = () => {
+    logout()
+    toast.success("Вы успешно вышли из системы")
+    router.push("/login")
+  }
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [grades, setGrades] = useState<GradeItem[]>([])
 
@@ -88,6 +96,7 @@ export default function TeacherGradesPage() {
 
   const [viewMode, setViewMode] = useState<"journal" | "lesson">("journal")
   const [journalDrafts, setJournalDrafts] = useState<Record<string, JournalCellDraft>>({})
+  const [openCommentEditors, setOpenCommentEditors] = useState<Record<string, boolean>>({})
   const [editingEnabled, setEditingEnabled] = useState(false)
   const [journalView, setJournalView] = useState<"horizontal" | "vertical">("horizontal")
   const [gradeScale, setGradeScale] = useState<"0-5" | "0-100">("0-5")
@@ -639,57 +648,7 @@ export default function TeacherGradesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <nav className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
-              <Button
-                variant="ghost"
-                className="text-foreground/70 hover:text-foreground text-sm"
-                onClick={() => router.push("/")}
-              >
-                Главная
-              </Button>
-              <Button
-                variant="ghost"
-                className="text-foreground/70 hover:text-foreground text-sm"
-                onClick={() => router.push("/teacher-groups")}
-              >
-                Мои группы
-              </Button>
-              <Button
-                variant="ghost"
-                className="text-foreground/70 hover:text-foreground text-sm"
-                onClick={() => router.push("/teacher-groups/calendar")}
-              >
-                Расписание
-              </Button>
-              <Button
-                className="bg-[#FF6B35] hover:bg-[#FF6B35]/90 text-white text-sm rounded-lg px-6"
-                onClick={() => router.push("/teacher-grades")}
-              >
-                Оценки
-              </Button>
-              <Button
-                variant="ghost"
-                className="text-foreground/70 hover:text-foreground text-sm"
-                onClick={() => router.push("/profile")}
-              >
-                Профиль
-              </Button>
-            </div>
-
-            <div className="text-sm text-muted-foreground">
-              {user ? (
-                <div className="text-right">
-                  <div className="font-medium text-foreground">{user.name}</div>
-                  <div>{user.email}</div>
-                </div>
-              ) : null}
-            </div>
-          </nav>
-        </div>
-      </header>
+      <TeacherHeader user={user} onLogout={handleLogout} />
 
       <div className="container mx-auto px-4 py-8 space-y-6">
         {viewMode === "journal" ? (
@@ -715,14 +674,28 @@ export default function TeacherGradesPage() {
                             type="button"
                             onClick={() => selectGroup(g.id)}
                             className={
-                              "w-full text-left rounded-md border p-3 transition-colors " +
-                              (active ? "bg-muted border-primary/40" : "hover:bg-muted/60")
+                              "w-full text-left rounded-lg border p-3 transition-colors " +
+                              (active
+                                ? "bg-primary/5 border-primary/40 shadow-sm"
+                                : "hover:bg-muted/60")
                             }
                           >
-                            <div className="font-medium leading-tight">{g.name}</div>
-                            <div className="mt-1 text-xs text-muted-foreground">
-                              {g.hall_name ? `Зал: ${g.hall_name} · ` : ""}
-                              Ученики: {g.student_count}/{g.capacity}
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="font-medium leading-tight">{g.name}</div>
+                              <span
+                                className={
+                                  "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide " +
+                                  (g.is_closed
+                                    ? "bg-muted text-muted-foreground"
+                                    : "bg-emerald-50 text-emerald-600")
+                                }
+                              >
+                                {g.is_closed ? "Закрыта" : "Активна"}
+                              </span>
+                            </div>
+                            <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                              <div>{g.hall_name ? `Зал: ${g.hall_name}` : "Зал не указан"}</div>
+                              <div className="text-right">{g.student_count}/{g.capacity} учеников</div>
                             </div>
                           </button>
                         )
@@ -730,16 +703,43 @@ export default function TeacherGradesPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-md border bg-muted/20 p-4">
+                  <div className="rounded-lg border bg-gradient-to-br from-background to-muted/40 p-4">
                     {selectedGroup ? (
-                      <div className="space-y-2">
-                        <div className="text-lg font-semibold">{selectedGroup.name}</div>
-                        <div className="text-sm text-muted-foreground">Оценки можно выставлять и редактировать прямо в журнале.</div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {dirtyCount > 0 ? (
-                            <div className="text-sm text-muted-foreground">Изменено: {dirtyCount}</div>
-                          ) : null}
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <div className="text-lg font-semibold">{selectedGroup.name}</div>
+                            <div className="text-sm text-muted-foreground">Журнал выбранной группы</div>
+                          </div>
+                          <span
+                            className={
+                              "rounded-full px-2.5 py-1 text-xs font-semibold " +
+                              (selectedGroup.is_closed
+                                ? "bg-muted text-muted-foreground"
+                                : "bg-emerald-50 text-emerald-600")
+                            }
+                          >
+                            {selectedGroup.is_closed ? "Закрыта" : "Активна"}
+                          </span>
                         </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                          <div className="rounded-md border bg-background/70 px-3 py-2">
+                            <div className="text-xs text-muted-foreground">Зал</div>
+                            <div className="font-medium">{selectedGroup.hall_name || "Не указан"}</div>
+                          </div>
+                          <div className="rounded-md border bg-background/70 px-3 py-2">
+                            <div className="text-xs text-muted-foreground">Ученики</div>
+                            <div className="font-medium">
+                              {selectedGroup.student_count}/{selectedGroup.capacity}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          Оценки можно выставлять и редактировать прямо в журнале.
+                        </div>
+                        {dirtyCount > 0 ? (
+                          <div className="text-sm text-amber-600">Несохранённых изменений: {dirtyCount}</div>
+                        ) : null}
                       </div>
                     ) : (
                       <div className="text-muted-foreground">Выберите группу слева</div>
@@ -770,7 +770,8 @@ export default function TeacherGradesPage() {
                           <div className="text-xs text-amber-600">Есть несохранённые изменения</div>
                         ) : null}
                         <Button
-                          variant={editingEnabled ? "default" : "outline"}
+                          variant={editingEnabled ? "secondary" : "outline"}
+                          className={editingEnabled ? "bg-amber-500 text-white hover:bg-amber-600" : "border-amber-300 text-amber-700 hover:bg-amber-50"}
                           onClick={() => {
                             if (!teacherEditEnabled) return
                             if (editingEnabled) {
@@ -840,8 +841,11 @@ export default function TeacherGradesPage() {
                                     dirty: false,
                                   }
 
+                                  const hasComment = Boolean(draft.comment?.trim())
+                                  const isCommentOpen = Boolean(openCommentEditors[key])
+
                                   return (
-                                    <div key={`c:${s.id}:${l.id}`} className="border-b border-r p-1">
+                                    <div key={`c:${s.id}:${l.id}`} className="group relative border-b border-r p-1">
                                       <Input
                                         className={
                                           "h-8 text-center " +
@@ -874,6 +878,82 @@ export default function TeacherGradesPage() {
                                         placeholder=""
                                         disabled={saving || !editingEnabled}
                                       />
+                                      {editingEnabled && !isCommentOpen ? (
+                                        <div className="absolute left-1 top-1 flex items-center gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon-sm"
+                                            className="h-7 w-7"
+                                            onClick={() =>
+                                              setOpenCommentEditors((p) => ({
+                                                ...p,
+                                                [key]: true,
+                                              }))
+                                            }
+                                            disabled={saving}
+                                            aria-label={hasComment ? "Изменить комментарий" : "Добавить комментарий"}
+                                          >
+                                            {hasComment ? <Pencil className="h-3.5 w-3.5" /> : <MessageSquarePlus className="h-3.5 w-3.5" />}
+                                          </Button>
+                                        </div>
+                                      ) : null}
+                                      {editingEnabled && isCommentOpen ? (
+                                        <div className="mt-2 space-y-2">
+                                          <Textarea
+                                            value={draft.comment ?? ""}
+                                            onChange={(e) =>
+                                              setJournalDrafts((p) => ({
+                                                ...p,
+                                                [key]: {
+                                                  value: p[key]?.value ?? draft.value,
+                                                  comment: e.target.value,
+                                                  dirty: true,
+                                                },
+                                              }))
+                                            }
+                                            placeholder="Короткий фидбек ученику"
+                                            disabled={saving}
+                                          />
+                                          <div className="flex items-center justify-end gap-2">
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="icon-sm"
+                                              className="h-7 w-7"
+                                              onClick={() => {
+                                                if (draft.value.trim() !== "") {
+                                                  void saveJournalCell(key)
+                                                }
+                                                setOpenCommentEditors((p) => ({
+                                                  ...p,
+                                                  [key]: false,
+                                                }))
+                                              }}
+                                              disabled={saving}
+                                              aria-label="Сохранить комментарий"
+                                            >
+                                              <Check className="h-4 w-4" />
+                                            </Button>
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="icon-sm"
+                                              className="h-7 w-7 text-destructive"
+                                              onClick={() =>
+                                                setOpenCommentEditors((p) => ({
+                                                  ...p,
+                                                  [key]: false,
+                                                }))
+                                              }
+                                              disabled={saving}
+                                              aria-label="Закрыть редактор комментария"
+                                            >
+                                              <X className="h-4 w-4" />
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      ) : null}
                                     </div>
                                   )
                                 })}
@@ -918,8 +998,11 @@ export default function TeacherGradesPage() {
                                     comment: existing ? existing.comment ?? "" : "",
                                     dirty: false,
                                   }
+                                  const hasComment = Boolean(draft.comment?.trim())
+                                  const isCommentOpen = Boolean(openCommentEditors[key])
+
                                   return (
-                                    <div key={`c:${l.id}:${s.id}`} className="border-b border-r p-1">
+                                    <div key={`c:${l.id}:${s.id}`} className="group relative border-b border-r p-1">
                                       <Input
                                         className={
                                           "h-8 text-center " +
@@ -952,6 +1035,82 @@ export default function TeacherGradesPage() {
                                         placeholder=""
                                         disabled={saving || !editingEnabled}
                                       />
+                                      {editingEnabled && !isCommentOpen ? (
+                                        <div className="absolute left-1 top-1 flex items-center gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon-sm"
+                                            className="h-7 w-7"
+                                            onClick={() =>
+                                              setOpenCommentEditors((p) => ({
+                                                ...p,
+                                                [key]: true,
+                                              }))
+                                            }
+                                            disabled={saving}
+                                            aria-label={hasComment ? "Изменить комментарий" : "Добавить комментарий"}
+                                          >
+                                            {hasComment ? <Pencil className="h-3.5 w-3.5" /> : <MessageSquarePlus className="h-3.5 w-3.5" />}
+                                          </Button>
+                                        </div>
+                                      ) : null}
+                                      {editingEnabled && isCommentOpen ? (
+                                        <div className="mt-2 space-y-2">
+                                          <Textarea
+                                            value={draft.comment ?? ""}
+                                            onChange={(e) =>
+                                              setJournalDrafts((p) => ({
+                                                ...p,
+                                                [key]: {
+                                                  value: p[key]?.value ?? draft.value,
+                                                  comment: e.target.value,
+                                                  dirty: true,
+                                                },
+                                              }))
+                                            }
+                                            placeholder="Короткий фидбек ученику"
+                                            disabled={saving}
+                                          />
+                                          <div className="flex items-center justify-end gap-2">
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="icon-sm"
+                                              className="h-7 w-7"
+                                              onClick={() => {
+                                                if (draft.value.trim() !== "") {
+                                                  void saveJournalCell(key)
+                                                }
+                                                setOpenCommentEditors((p) => ({
+                                                  ...p,
+                                                  [key]: false,
+                                                }))
+                                              }}
+                                              disabled={saving}
+                                              aria-label="Сохранить комментарий"
+                                            >
+                                              <Check className="h-4 w-4" />
+                                            </Button>
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="icon-sm"
+                                              className="h-7 w-7 text-destructive"
+                                              onClick={() =>
+                                                setOpenCommentEditors((p) => ({
+                                                  ...p,
+                                                  [key]: false,
+                                                }))
+                                              }
+                                              disabled={saving}
+                                              aria-label="Закрыть редактор комментария"
+                                            >
+                                              <X className="h-4 w-4" />
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      ) : null}
                                     </div>
                                   )
                                 })}

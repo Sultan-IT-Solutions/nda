@@ -2,12 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { SignOut } from "@phosphor-icons/react";
-import { NotificationBell } from "@/components/notification-bell";
+import { StudentHeader } from "@/components/student-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,14 +24,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Calendar,
   Clock,
@@ -376,92 +366,14 @@ export default function TrialPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Consistent Header Navigation */}
-      <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <nav className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
-              <Button
-                variant="ghost"
-                className="text-foreground/70 hover:text-foreground text-sm"
-                onClick={() => router.push("/")}
-              >
-                Главная
-              </Button>
-              <Button
-                variant="ghost"
-                className="text-foreground/70 hover:text-foreground text-sm"
-                onClick={() => router.push("/schedule")}
-              >
-                Расписание групп
-              </Button>
-              <Button
-                variant="ghost"
-                className="text-foreground/70 hover:text-foreground text-sm"
-                onClick={() => router.push("/my-groups")}
-              >
-                Мои группы
-              </Button>
-              <Button
-                className="bg-[#FF6B35] hover:bg-[#FF6B35]/90 text-white text-sm rounded-lg px-6"
-              >
-                Пробный урок
-              </Button>
-              <Button
-                variant="ghost"
-                className="text-foreground/70 hover:text-foreground text-sm"
-                onClick={() => router.push("/profile")}
-              >
-                Профиль
-              </Button>
-            </div>
-
-            {isAuth && profile && (
-              <div className="flex items-center gap-4">
-                <NotificationBell accentColor="bg-[#FF6B35]" />
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">Уведомления</span>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button className="focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-full">
-                        <Avatar className="h-9 w-9 cursor-pointer hover:opacity-80 transition-opacity">
-                          <AvatarFallback className="bg-gradient-to-br from-purple-500 to-pink-500 text-white text-xs font-semibold">
-                            {profile?.initials || 'U'}
-                          </AvatarFallback>
-                        </Avatar>
-                      </button>
-                    </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuLabel>
-                      <div className="flex flex-col space-y-1">
-                        <p className="text-sm font-medium leading-none">{profile?.name || 'User'}</p>
-                        <p className="text-xs leading-none text-muted-foreground">{profile?.email || ''}</p>
-                      </div>
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-destructive focus:text-destructive">
-                      <SignOut size={16} className="mr-2" />
-                      Выйти
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                </div>
-              </div>
-            )}
-
-            {!isAuth && (
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => router.push("/login")}>
-                  Войти
-                </Button>
-                <Button onClick={() => router.push("/register")}>
-                  Регистрация
-                </Button>
-              </div>
-            )}
-          </nav>
-        </div>
-      </header>
+      <StudentHeader
+        user={profile}
+        onLogout={handleLogout}
+        activePath="/trial"
+        isAuthenticated={isAuth}
+        onLogin={() => router.push("/login")}
+        onRegister={() => router.push("/register")}
+      />
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         {/* Header Section */}
@@ -513,83 +425,6 @@ export default function TrialPage() {
           </div>
         )}
 
-        {/* Available Groups */}
-        <div data-tour="trial-available" className="mb-12">
-          <h2 className="text-2xl font-semibold mb-6">Доступные группы для пробного урока</h2>
-          {availableGroups.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {availableGroups.map((group) => (
-                <Card key={group.id} className="hover:shadow-lg transition-shadow">
-                  <CardHeader>
-                    <div className="flex justify-between items-start mb-2">
-                      <CardTitle className="text-lg">{group.name}</CardTitle>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {group.teacher_names.length > 0 ? `с ${group.teacher_names.join(', ')}` : 'Преподаватель не назначен'}
-                    </p>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      <Calendar className="h-4 w-4" />
-                      <span>{(group.schedule && group.schedule !== 'Не назначено') ? group.schedule : 'Расписание уточняется'}</span>
-                    </div>
-
-                    {group.is_trial && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <Star className="h-4 w-4" />
-                        <span>
-                          Цена: {typeof group.trial_price === 'number'
-                            ? `${group.trial_price}${typeof group.trial_currency === 'string' && group.trial_currency.trim().length > 0 ? ` ${group.trial_currency}` : ''}`
-                            : 'Не указана'}
-                        </span>
-                      </div>
-                    )}
-
-                    <div className="flex items-center gap-2 text-sm">
-                      <Clock className="h-4 w-4" />
-                      <span>{group.duration_minutes} минут</span>
-                    </div>
-                    {group.hall && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <MapPin className="h-4 w-4" />
-                        <span>{group.hall.name}</span>
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2 text-sm">
-                      <Users className="h-4 w-4" />
-                      <span>{group.enrolled}/{group.capacity} мест занято</span>
-                    </div>
-                    <Button
-                      className="w-full mt-4"
-                      onClick={() => handleBookTrial(group)}
-                      disabled={
-                        !isAuth ||
-                        userRole !== 'student' ||
-                        (userRole === 'student' && studentData && studentData.trials_used >= studentData.trials_allowed) ||
-                        group.enrolled >= group.capacity
-                      }
-                    >
-                      {!isAuth ? "Войдите для записи" :
-                       userRole !== 'student' ? "Только для учеников" :
-                       (userRole === 'student' && studentData && studentData.trials_used >= studentData.trials_allowed) ? "Лимит пробных уроков исчерпан" :
-                       group.enrolled >= group.capacity ? "Нет мест" : "Записаться на пробный урок"}
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <Card>
-              <CardContent className="text-center py-12">
-                <p className="text-lg text-muted-foreground">
-                  На данный момент нет доступных групп для пробного урока
-                </p>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-
-
         {/* Booking Confirmation Dialog */}
         <Dialog
           open={selectedGroup !== null}
@@ -611,77 +446,6 @@ export default function TrialPage() {
             <div className="space-y-4">
               <div className="rounded-md border p-3 text-sm">
                 <div className="font-medium">Дата и время</div>
-                <div className="text-muted-foreground">
-                  {(selectedGroup?.upcoming_lessons?.length ?? 0) > 0 ? (
-                    <div className="space-y-2">
-                      <div className="text-xs text-muted-foreground">Выберите одно время</div>
-                      <div className="space-y-2">
-                        {(selectedGroup?.upcoming_lessons ?? []).map((t) => {
-                          const label = formatLessonPretty(t) ?? t;
-                          const checked = selectedTrialLessonTime === t;
-                          return (
-                            <div
-                              key={t}
-                              role="button"
-                              tabIndex={0}
-                              className="w-full flex items-start gap-2 rounded-md border p-2 text-left hover:bg-muted/50 cursor-pointer"
-                              onClick={() => setSelectedTrialLessonTime(checked ? null : t)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" || e.key === " ") {
-                                  e.preventDefault();
-                                  setSelectedTrialLessonTime(checked ? null : t);
-                                }
-                              }}
-                            >
-                              <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                                <Checkbox
-                                  checked={checked}
-                                  onCheckedChange={(v) => setSelectedTrialLessonTime(v ? t : null)}
-                                  aria-label={label}
-                                />
-                              </div>
-                              <div className="text-sm leading-tight">{label}</div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : (
-                    (selectedGroup?.schedule && selectedGroup.schedule !== 'Не назначено')
-                      ? selectedGroup.schedule
-                      : 'Расписание еще не сформировано'
-                  )}
-                </div>
-              </div>
-
-              {selectedGroup?.is_trial && (
-                <div className="rounded-md border p-3 text-sm">
-                  <div className="font-medium">Цена</div>
-                  <div className="text-muted-foreground">
-                    {typeof selectedGroup.trial_price === 'number'
-                      ? `${selectedGroup.trial_price}${typeof selectedGroup.trial_currency === 'string' && selectedGroup.trial_currency.trim().length > 0 ? ` ${selectedGroup.trial_currency}` : ''}`
-                      : 'Не указана'}
-                  </div>
-                </div>
-              )}
-              <p className="text-sm text-muted-foreground">
-                Вы уверены, что хотите записаться на пробный урок?
-                После подтверждения один из ваших пробных уроков будет использован.
-              </p>
-              <div className="flex gap-3 justify-end">
-                <Button variant="outline" onClick={() => setSelectedGroup(null)}>
-                  Отмена
-                </Button>
-                <Button
-                  onClick={handleSubmitBooking}
-                  className="bg-[#FF6B35] hover:bg-[#FF6B35]/90"
-                  disabled={
-                    submittingBooking ||
-                    ((selectedGroup?.upcoming_lessons?.length ?? 0) > 0 && !selectedTrialLessonTime)
-                  }
-                >
-                  Подтвердить запись
-                </Button>
               </div>
             </div>
           </DialogContent>
