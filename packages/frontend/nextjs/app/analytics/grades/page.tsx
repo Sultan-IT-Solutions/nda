@@ -435,7 +435,7 @@ export default function AdminGradesPage() {
                         className="grid"
                         style={{ gridTemplateColumns: `260px repeat(${sortedLessons.length}, 140px) 140px` }}
                       >
-                        <div className="sticky left-0 z-10 bg-background border-b border-r p-2 font-medium">Ученик</div>
+                        <div className="md:sticky md:left-0 md:z-10 bg-background border-b border-r p-2 font-medium">Ученик</div>
                         {sortedLessons.map((lesson) => (
                           <div key={lesson.id} className="border-b border-r p-2 text-xs text-muted-foreground">
                             {formatLessonLabel(lesson)}
@@ -445,7 +445,7 @@ export default function AdminGradesPage() {
 
                         {(filteredStudents ?? []).map((student) => (
                           <div key={`row:${student.id}`} className="contents">
-                            <div className="sticky left-0 z-10 bg-background border-b border-r p-2">
+                            <div className="md:sticky md:left-0 md:z-10 bg-background border-b border-r p-2">
                               <div className="font-medium leading-tight">{student.name}</div>
                             </div>
 

@@ -1,8 +1,8 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { SignOut } from "@phosphor-icons/react"
+import { List, SignOut } from "@phosphor-icons/react"
 import { NotificationBell } from "@/components/notification-bell"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -14,6 +14,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
+import { ScrollArea } from "@/components/ui/scroll-area"
 
 export type TeacherHeaderUser = {
   name?: string | null
@@ -37,6 +45,7 @@ const navItems = [
 export function TeacherHeader({ user, onLogout, activePath }: TeacherHeaderProps) {
   const router = useRouter()
   const pathname = usePathname()
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
 
   const active = activePath ?? pathname
 
@@ -55,11 +64,64 @@ export function TeacherHeader({ user, onLogout, activePath }: TeacherHeaderProps
     return active.startsWith(path)
   }
 
+  const goTo = (path: string) => {
+    setIsMobileNavOpen(false)
+    router.push(path)
+  }
+
   return (
     <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-6 py-4">
-        <nav className="flex items-center justify-between">
-          <div className="flex items-center gap-6">
+        <nav className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 md:hidden">
+            <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="relative">
+                  <List size={22} />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-[320px] p-0">
+                <SheetHeader className="px-5 py-4 border-b">
+                  <SheetTitle className="text-base font-semibold">Nomad Dance Academy</SheetTitle>
+                  <div className="text-xs text-muted-foreground">Учительская зона</div>
+                </SheetHeader>
+
+                <ScrollArea className="h-[calc(100vh-160px)]">
+                  <div className="p-3 space-y-3">
+                    <div className="space-y-1">
+                      {navItems.map((item) => (
+                        <Button
+                          key={item.path}
+                          variant={isActivePath(item.path) ? "secondary" : "ghost"}
+                          className="w-full justify-start text-sm"
+                          onClick={() => goTo(item.path)}
+                        >
+                          {item.label}
+                        </Button>
+                      ))}
+                    </div>
+
+                    <div className="h-px bg-border" />
+
+                    <div className="px-1">
+                      <div className="text-xs text-muted-foreground mb-2">Аккаунт</div>
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start text-sm text-destructive"
+                        onClick={onLogout}
+                      >
+                        <SignOut size={16} className="mr-2" />
+                        Выйти
+                      </Button>
+                    </div>
+                  </div>
+                </ScrollArea>
+              </SheetContent>
+            </Sheet>
+            <div className="text-sm font-semibold">Nomad Dance Academy</div>
+          </div>
+
+          <div className="hidden md:flex items-center gap-6">
             {navItems.map((item) => {
               const activeItem = isActivePath(item.path)
               return (
@@ -82,7 +144,7 @@ export function TeacherHeader({ user, onLogout, activePath }: TeacherHeaderProps
           <div className="flex items-center gap-4">
             <NotificationBell accentColor="bg-[#FF6B35]" />
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Уведомления</span>
+              <span className="hidden sm:inline text-sm text-muted-foreground">Уведомления</span>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-full">

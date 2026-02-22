@@ -818,7 +818,7 @@ export default function TeacherGradesPage() {
                             className="grid"
                             style={{ gridTemplateColumns: `260px repeat(${sortedLessons.length}, 120px) 140px` }}
                           >
-                            <div className="sticky left-0 z-10 bg-background border-b border-r p-2 font-medium">Ученик</div>
+                            <div className="md:sticky md:left-0 md:z-10 bg-background border-b border-r p-2 font-medium">Ученик</div>
                             {sortedLessons.map((l) => (
                               <div key={l.id} className="border-b border-r p-2 text-xs text-muted-foreground">
                                 {formatLessonLabel(l)}
@@ -828,7 +828,7 @@ export default function TeacherGradesPage() {
 
                             {(filteredStudents ?? []).map((s) => (
                               <div key={`row:${s.id}`} className="contents">
-                                <div className="sticky left-0 z-10 bg-background border-b border-r p-2">
+                                <div className="md:sticky md:left-0 md:z-10 bg-background border-b border-r p-2">
                                   <div className="font-medium leading-tight">{s.name}</div>
                                 </div>
 
@@ -978,7 +978,7 @@ export default function TeacherGradesPage() {
                             className="grid"
                             style={{ gridTemplateColumns: `260px repeat(${filteredStudents.length}, 120px)` }}
                           >
-                            <div className="sticky left-0 z-10 bg-background border-b border-r p-2 font-medium">Дата</div>
+                            <div className="md:sticky md:left-0 md:z-10 bg-background border-b border-r p-2 font-medium">Дата</div>
                             {filteredStudents.map((s) => (
                               <div key={s.id} className="border-b border-r p-2 text-xs text-muted-foreground">
                                 {s.name}
@@ -987,7 +987,7 @@ export default function TeacherGradesPage() {
 
                             {sortedLessons.map((l) => (
                               <div key={`row:${l.id}`} className="contents">
-                                <div className="sticky left-0 z-10 bg-background border-b border-r p-2 text-xs">
+                                <div className="md:sticky md:left-0 md:z-10 bg-background border-b border-r p-2 text-xs">
                                   {formatLessonLabel(l)}
                                 </div>
                                 {filteredStudents.map((s) => {
@@ -1117,7 +1117,7 @@ export default function TeacherGradesPage() {
                               </div>
                             ))}
 
-                            <div className="sticky left-0 z-10 bg-background border-b border-r p-2 text-sm font-medium">
+                            <div className="md:sticky md:left-0 md:z-10 bg-background border-b border-r p-2 text-sm font-medium">
                               Общая оценка
                             </div>
                             {filteredStudents.map((s) => {
