@@ -95,12 +95,15 @@ async def login(data: LoginRequest, response: Response):
     is_prod = str(getattr(settings, "ENV", "development")).lower() == "production"
     max_age = int(getattr(settings, "REFRESH_TOKEN_DAYS", 30)) * 24 * 60 * 60
 
+
+    cookie_samesite = "none" if is_prod else "lax"
+
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
         secure=is_prod,
-        samesite="lax",
+        samesite=cookie_samesite,
         path="/",
         max_age=max_age,
     )
@@ -142,5 +145,14 @@ async def refresh(request: Request):
 
 @router.post("/logout")
 async def logout(response: Response):
-    response.delete_cookie(key="refresh_token", path="/")
+    settings = get_settings()
+    is_prod = str(getattr(settings, "ENV", "development")).lower() == "production"
+    cookie_samesite = "none" if is_prod else "lax"
+
+    response.delete_cookie(
+        key="refresh_token",
+        path="/",
+        secure=is_prod,
+        samesite=cookie_samesite,
+    )
     return {"ok": True}
