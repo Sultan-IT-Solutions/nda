@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
 
@@ -11,6 +11,7 @@ from app.system_settings import (
     set_setting_value,
 )
 from app.notifications import NotificationType, create_notifications_for_users
+from app.audit_log import log_action
 
 
 async def _convert_grades_scale(pool, from_scale: str, to_scale: str) -> None:
@@ -103,11 +104,24 @@ class UpdateSettingsRequest(BaseModel):
 
 
 @router.patch("/admin/settings")
-async def admin_update_settings(data: UpdateSettingsRequest, user: dict = Depends(require_admin)):
+async def admin_update_settings(
+    data: UpdateSettingsRequest,
+    request: Request,
+    user: dict = Depends(require_admin),
+):
     pool = await get_connection()
 
-    current_settings = await get_settings_values(pool, ["grades.scale"])
-    current_scale = current_settings.get("grades.scale", "0-5")
+    before_settings = await get_settings_values(
+        pool,
+        [
+            "registration.enabled",
+            "trial_lessons.enabled",
+            "grades.scale",
+            "grades.teacher_edit_enabled",
+        ],
+    )
+
+    current_scale = before_settings.get("grades.scale", "0-5")
     next_scale = current_scale
 
     updates = 0
@@ -140,4 +154,66 @@ async def admin_update_settings(data: UpdateSettingsRequest, user: dict = Depend
         await _notify_teachers_about_scale(pool, current_scale, next_scale)
 
     settings = await get_settings_values(pool, DEFAULT_SETTINGS.keys())
+
+    def _toggle_label(prefix: str, enabled: bool) -> str:
+        return f"{prefix} / {'Включение' if enabled else 'Отключение'}"
+
+    if data.registration_enabled is not None:
+        enabled = bool(data.registration_enabled)
+        await log_action(
+            actor=user,
+            action_key=f"admin.settings.registration{'Enabled' if enabled else 'Disabled'}",
+            action_label=_toggle_label("Изменение системных настроек: Регистрация", enabled),
+            meta={
+                "setting": "registration.enabled",
+                "from": before_settings.get("registration.enabled"),
+                "to": enabled,
+            },
+            request=request,
+        )
+
+    if data.trial_lessons_enabled is not None:
+        enabled = bool(data.trial_lessons_enabled)
+        await log_action(
+            actor=user,
+            action_key=f"admin.settings.trialLessons{'Enabled' if enabled else 'Disabled'}",
+            action_label=_toggle_label("Изменение системных настроек: Пробные уроки", enabled),
+            meta={
+                "setting": "trial_lessons.enabled",
+                "from": before_settings.get("trial_lessons.enabled"),
+                "to": enabled,
+            },
+            request=request,
+        )
+
+    if data.teacher_edit_enabled is not None:
+        enabled = bool(data.teacher_edit_enabled)
+        await log_action(
+            actor=user,
+            action_key=f"admin.settings.teacherEdit{'Enabled' if enabled else 'Disabled'}",
+            action_label=_toggle_label(
+                "Изменение системных настроек: Редактирование оценок учителем",
+                enabled,
+            ),
+            meta={
+                "setting": "grades.teacher_edit_enabled",
+                "from": before_settings.get("grades.teacher_edit_enabled"),
+                "to": enabled,
+            },
+            request=request,
+        )
+
+    if data.grades_scale is not None:
+        await log_action(
+            actor=user,
+            action_key="admin.settings.gradesScale",
+            action_label=f"Изменение системных настроек: Шкала оценок: {current_scale} → {next_scale}",
+            meta={
+                "setting": "grades.scale",
+                "from": current_scale,
+                "to": next_scale,
+            },
+            request=request,
+        )
+
     return {"settings": settings}

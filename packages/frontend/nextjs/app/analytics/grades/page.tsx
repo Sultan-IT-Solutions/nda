@@ -16,6 +16,7 @@ import { API, handleApiError } from "@/lib/api"
 import { buildLoginUrl, DEFAULT_SESSION_EXPIRED_MESSAGE } from "@/lib/auth"
 import { toast } from "sonner"
 import * as XLSX from "xlsx"
+import { averageToInteger, formatAverage00 } from "@/lib/grade-format"
 
 type GroupListItem = {
   groupId: number
@@ -232,7 +233,7 @@ export default function AdminGradesPage() {
   const getAverageForStudent = (studentId: number) => {
     const avg = getAverageValueForStudent(studentId)
     if (avg === null) return "—"
-    return avg.toFixed(2)
+    return formatAverage00(avg)
   }
 
   const toScale100 = (value: number) => (gradesScale === "0-5" ? value * 20 : value)
@@ -259,8 +260,8 @@ export default function AdminGradesPage() {
         row.push(grade ? grade.value : "")
       }
       const avg = getAverageValueForStudent(student.id)
-      row.push(avg === null ? "" : Number(avg.toFixed(2)))
-      row.push(avg === null ? "" : Number(toScale100(avg).toFixed(2)))
+      row.push(avg === null ? "" : averageToInteger(avg))
+      row.push(avg === null ? "" : averageToInteger(toScale100(avg)))
       return row
     })
 
@@ -298,6 +299,18 @@ export default function AdminGradesPage() {
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, "Оценки")
     XLSX.writeFile(workbook, `Оценки_${exportData.safeGroupName}.xlsx`)
+
+    API.admin.logAuditEvent({
+      action_key: "admin.export.grades.xlsx",
+      action_label: "Экспорт данных / Оценки (Excel)",
+      meta: {
+        groupId: selectedGroup?.groupId ?? null,
+        groupName: selectedGroup?.groupName ?? null,
+        filteredOnly: exportFilteredOnly,
+        studentsCount: exportData.exportStudents.length,
+        lessonsCount: sortedLessons.length,
+      },
+    })
   }
 
   const handleExportCsv = () => {
@@ -313,6 +326,18 @@ export default function AdminGradesPage() {
     link.download = `Оценки_${exportData.safeGroupName}.csv`
     link.click()
     URL.revokeObjectURL(url)
+
+    API.admin.logAuditEvent({
+      action_key: "admin.export.grades.csv",
+      action_label: "Экспорт данных / Оценки (CSV)",
+      meta: {
+        groupId: selectedGroup?.groupId ?? null,
+        groupName: selectedGroup?.groupName ?? null,
+        filteredOnly: exportFilteredOnly,
+        studentsCount: exportData.exportStudents.length,
+        lessonsCount: sortedLessons.length,
+      },
+    })
   }
 
   return (

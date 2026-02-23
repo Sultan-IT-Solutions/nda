@@ -23,7 +23,8 @@ def get_password_hash(password: str) -> str:
     return hashed.decode('utf-8')
 def create_access_token(user_id: int, role: str) -> str:
     settings = get_settings()
-    expire = _utcnow() + timedelta(hours=24)
+    access_minutes = int(getattr(settings, "ACCESS_TOKEN_MINUTES", 10))
+    expire = _utcnow() + timedelta(minutes=access_minutes)
     to_encode = {
         "id": user_id,
         "role": role,

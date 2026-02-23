@@ -150,7 +150,6 @@ export default function TeacherCalendarPage() {
     }
 
     fetchWeek()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, mode, weekStartStr])
 
   const selectedHall = useMemo(() => {

@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { GlobalToaster } from '@/components/global-toaster'
 import { AuthRequiredRedirect } from '@/components/auth-required-redirect'
+import { IdleLogout } from '@/components/idle-logout'
 import { OnboardingTour } from '@/components/onboarding-tour'
 import './globals.css'
 
@@ -26,6 +27,7 @@ export default function RootLayout({
       <body className={`font-sans antialiased`}>
         <GlobalToaster />
         <AuthRequiredRedirect />
+        <IdleLogout />
         <Suspense fallback={null}>
           <OnboardingTour />
         </Suspense>

@@ -449,6 +449,49 @@ export default function GroupDetailPage() {
     }
   }
 
+  const parseScheduleEntryDayOfWeek = (entry: string): number | null => {
+    const t = entry.trim().toLowerCase()
+    const map: Record<string, number> = {
+      'вс': 0,
+      'воскресенье': 0,
+      'пн': 1,
+      'понедельник': 1,
+      'вт': 2,
+      'вторник': 2,
+      'ср': 3,
+      'среда': 3,
+      'чт': 4,
+      'четверг': 4,
+      'пт': 5,
+      'пятница': 5,
+      'сб': 6,
+      'суббота': 6,
+    }
+
+    for (const [key, value] of Object.entries(map)) {
+      if (t.startsWith(key)) return value
+    }
+    return null
+  }
+
+  const handleDeleteScheduleEntry = async (entry: string) => {
+    const dayOfWeek = parseScheduleEntryDayOfWeek(entry)
+    if (dayOfWeek === null) {
+      toast.error('Не удалось определить день недели в расписании')
+      return
+    }
+
+    try {
+      await API.admin.deleteGroupSchedule(groupId, dayOfWeek)
+      toast.success('Расписание удалено')
+      fetchGroupDetails()
+      setAttendanceRefreshKey(prev => prev + 1)
+    } catch (err) {
+      console.error('Error deleting schedule:', err)
+      toast.error('Ошибка при удалении расписания')
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -947,8 +990,37 @@ export default function GroupDetailPage() {
               </CardHeader>
               {group.schedule && group.schedule !== "Не назначено" && (
                 <CardContent>
-                  <div className="p-2 bg-gray-50 rounded">
-                    <span className="text-sm">{group.schedule}</span>
+                  <div className="space-y-2">
+                    {group.schedule.split(',').map((rawEntry: string, idx: number) => {
+                      const entry = rawEntry.trim()
+                      if (!entry) return null
+                      return (
+                        <div key={`${entry}-${idx}`} className="flex items-center justify-between gap-3 p-2 bg-gray-50 rounded">
+                          <span className="text-sm">{entry}</span>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="outline" size="sm">
+                                <Trash className="w-4 h-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Удалить расписание?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Вы уверены, что хотите удалить запись расписания "{entry}"?
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Отмена</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => handleDeleteScheduleEntry(entry)}>
+                                  Удалить
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      )
+                    })}
                   </div>
                 </CardContent>
               )}

@@ -38,6 +38,11 @@ async function waitForElement(selector: string, timeoutMs: number): Promise<Elem
   return null
 }
 
+function isTourDone(): boolean {
+  if (typeof window === "undefined") return true
+  return window.localStorage.getItem(TOUR_DONE_KEY) === "1"
+}
+
 function ensurePopoverHeader(popover: { wrapper: HTMLElement; title: HTMLElement; closeButton: HTMLButtonElement }) {
   const existing = popover.wrapper.querySelector<HTMLElement>(".nda-driver-header")
   if (existing) return
@@ -149,7 +154,7 @@ export function OnboardingTour() {
     const triggered =
       searchParams.get("tour") === "1" || window.sessionStorage.getItem("nda_start_tour") === "1"
 
-    const alreadyDone = window.localStorage.getItem(TOUR_DONE_KEY) === "1"
+  const alreadyDone = isTourDone()
     if (!triggered && alreadyDone) return
     if (!triggered) return
 
@@ -173,6 +178,16 @@ export function OnboardingTour() {
   useEffect(() => {
     if (!running) return
 
+    if (isTourDone()) {
+      setRunning(false)
+      try {
+        driverRef.current?.destroy()
+      } catch {
+        // ignoring
+      }
+      return
+    }
+
     const currentStep = steps[stepIndex]
     if (!currentStep) return
 
@@ -193,6 +208,20 @@ export function OnboardingTour() {
     }
 
     const isLast = stepIndex === steps.length - 1
+
+ 
+    let lastStepFallbackTimer: number | null = null
+    if (isLast) {
+      lastStepFallbackTimer = window.setTimeout(() => {
+        if (!isTourDone()) markTourDone()
+        setRunning(false)
+        try {
+          driverRef.current?.destroy()
+        } catch {
+          // ignoring
+        }
+      }, 4000)
+    }
 
     const goPrev = () => {
       if (stepIndex <= 0) return
@@ -297,6 +326,10 @@ export function OnboardingTour() {
 
     return () => {
       cancelled = true
+
+      if (lastStepFallbackTimer) {
+        window.clearTimeout(lastStepFallbackTimer)
+      }
       try {
         instance?.destroy()
       } catch {

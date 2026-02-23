@@ -4,6 +4,7 @@ from typing import Optional, Union, List
 from datetime import datetime, date, time, timedelta
 from app.database import get_connection
 from app.auth import require_auth, require_teacher
+from app.audit_log import log_action
 router = APIRouter(prefix="/teachers", tags=["Teachers"])
 DAY_NAMES_BY_NUM = {
     0: "Вс",
@@ -14,6 +15,7 @@ DAY_NAMES_BY_NUM = {
     5: "Пт",
     6: "Сб"
 }
+
 async def get_group_schedule_formatted(pool, group_id: int) -> str:
     lesson_count = await pool.fetchval(
         "SELECT COUNT(*) FROM lessons WHERE group_id = $1", group_id
@@ -45,6 +47,7 @@ async def get_group_schedule_formatted(pool, group_id: int) -> str:
         times = ", ".join(day_times[dow])
         parts.append(f"{day_name} {times}")
     return ", ".join(parts)
+
 async def sync_group_schedules_with_lessons(pool, group_id: int):
     await pool.execute(
         "DELETE FROM group_schedules WHERE group_id = $1", group_id
@@ -68,6 +71,7 @@ async def sync_group_schedules_with_lessons(pool, group_id: int):
             """,
             group_id, pattern['day_of_week'], pattern['lesson_time']
         )
+
 def generate_lesson_dates(start_date: date, end_date: date, day_of_week: int, lesson_time: time) -> List[datetime]:
     lessons = []
     current_date = start_date
@@ -81,6 +85,7 @@ def generate_lesson_dates(start_date: date, end_date: date, day_of_week: int, le
         lessons.append(lesson_datetime)
         lesson_date += timedelta(weeks=1)
     return lessons
+
 class CreateGroupRequest(BaseModel):
     name: str
     hall_id: int
@@ -107,6 +112,7 @@ class CreateGroupRequest(BaseModel):
                     continue
             raise ValueError(f"Invalid datetime format. Supported formats: YYYY-MM-DD HH:MM, MM/DD/YYYY HH:MM, DD.MM.YYYY HH:MM")
         return v
+    
 class AdditionalLessonRequest(BaseModel):
     start_time: Union[datetime, str]
     hall_id: Optional[int] = None
@@ -132,13 +138,18 @@ class AdditionalLessonRequest(BaseModel):
                     continue
             raise ValueError(f"Invalid datetime format. Supported formats: YYYY-MM-DD HH:MM, MM/DD/YYYY HH:MM, DD.MM.YYYY HH:MM")
         return v
+    
 class AttendanceRequest(BaseModel):
     attended: bool
+
 class SaveLessonAttendanceRequest(BaseModel):
     lesson_date: str
+
     attendance_records: List[dict]
+
 class GroupNotesRequest(BaseModel):
     notes: str
+
 class RescheduleRequest(BaseModel):
     lesson_id: Optional[int] = None
     group_id: Optional[int] = None
@@ -166,6 +177,7 @@ class RescheduleRequest(BaseModel):
                     continue
             raise ValueError(f"Invalid datetime format. Supported formats: YYYY-MM-DD HH:MM, MM/DD/YYYY HH:MM, DD.MM.YYYY HH:MM")
         return v
+    
 async def resolve_teacher_id(pool, user_id: int) -> Optional[int]:
     row = await pool.fetchrow(
         "SELECT id FROM teachers WHERE user_id = $1",
@@ -184,6 +196,7 @@ async def resolve_teacher_id(pool, user_id: int) -> Optional[int]:
         )
         return teacher_row["id"]
     return None
+
 async def teacher_assigned_to_group(pool, teacher_id: int, group_id: int) -> bool:
     row = await pool.fetchrow(
         """
@@ -192,6 +205,7 @@ async def teacher_assigned_to_group(pool, teacher_id: int, group_id: int) -> boo
         group_id, teacher_id
     )
     return row is not None
+
 @router.get("/groups")
 async def get_teacher_groups(user: dict = Depends(require_teacher)):
     pool = await get_connection()
@@ -231,6 +245,7 @@ async def get_teacher_groups(user: dict = Depends(require_teacher)):
         teacher_id
     )
     groups = []
+
     for r in rows:
         enrolled = int(r["enrolled"]) if r["enrolled"] else 0
         schedule = await get_group_schedule_formatted(pool, r["id"])
@@ -258,6 +273,7 @@ async def get_teacher_groups(user: dict = Depends(require_teacher)):
             "notes": r["notes"]
         })
     return {"groups": groups}
+
 @router.post("/groups")
 async def create_group(data: CreateGroupRequest, user: dict = Depends(require_teacher)):
     pool = await get_connection()
@@ -452,7 +468,6 @@ async def get_scheduled_lessons(user: dict = Depends(require_teacher)):
     scheduled_lessons.sort(key=lambda x: x["lessonDateTime"])
     return {"lessons": scheduled_lessons}
 
-
 @router.get("/schedule/weekly")
 async def get_teacher_weekly_schedule(
     week_start: str,
@@ -620,6 +635,7 @@ async def get_halls_occupancy_weekly(
         "hours": hours,
         "halls": sorted(halls.values(), key=lambda h: h["name"]),
     }
+
 @router.post("/groups/{group_id}/attendance")
 async def save_lesson_attendance(group_id: int, data: SaveLessonAttendanceRequest, user: dict = Depends(require_teacher)):
     pool = await get_connection()
@@ -652,6 +668,48 @@ async def save_lesson_attendance(group_id: int, data: SaveLessonAttendanceReques
                     """,
                     group_id, student_id, teacher_id, attended, datetime.combine(lesson_date, datetime.now().time())
                 )
+
+    try:
+        group = await pool.fetchrow("SELECT id, name FROM groups WHERE id = $1", group_id)
+        group_name = group["name"] if group else str(group_id)
+
+        lesson_time = None
+        try:
+            dow = lesson_date.weekday()  # Monday=0
+            lesson_time = await pool.fetchval(
+                """
+                SELECT start_time
+                FROM group_schedules
+                WHERE group_id = $1 AND day_of_week = $2 AND is_active = TRUE
+                LIMIT 1
+                """,
+                group_id,
+                dow,
+            )
+        except Exception:
+            lesson_time = None
+
+        dt_label = lesson_date.isoformat()
+        if lesson_time:
+            try:
+                dt_label = f"{lesson_date.isoformat()} {lesson_time.strftime('%H:%M')}"
+            except Exception:
+                dt_label = lesson_date.isoformat()
+
+        await log_action(
+            actor=user,
+            action_key="teacher.groups.attendanceSaved",
+            action_label=f"Отметка посещаемости: группа: {group_name}: {dt_label}",
+            meta={
+                "group_id": group_id,
+                "group_name": group_name,
+                "lesson_date": lesson_date.isoformat(),
+                "lesson_time": lesson_time.strftime("%H:%M") if lesson_time else None,
+                "records_count": len(data.attendance_records or []),
+            },
+        )
+    except Exception:
+        pass
     return {"message": "Attendance saved successfully"}
 
 @router.post("/groups/{group_id}/extra-lessons")
@@ -1257,6 +1315,7 @@ async def get_teacher_lessons_with_attendance(group_id: int, user: dict = Depend
         group_id
     )
     return {"lessons": [dict(lesson) for lesson in lessons]}
+
 @router.get("/groups/{group_id}/lessons/{lesson_id}/attendance")
 async def get_teacher_lesson_attendance(group_id: int, lesson_id: int, user: dict = Depends(require_teacher)):
     pool = await get_connection()
@@ -1363,6 +1422,7 @@ async def get_teacher_lesson_attendance(group_id: int, lesson_id: int, user: dic
     seen_ids = set()
     combined = [s for s in combined if not (s["id"] in seen_ids or seen_ids.add(s["id"]))]
     return {"students": combined}
+
 @router.post("/groups/{group_id}/lessons/{lesson_id}/attendance")
 async def save_teacher_lesson_attendance(
     group_id: int,
@@ -1405,6 +1465,7 @@ async def save_teacher_lesson_attendance(
     except Exception as e:
         print(f"Error saving attendance: {e}")
         raise HTTPException(status_code=500, detail="Failed to save attendance")
+    
 @router.post("/groups/{group_id}/lessons")
 async def create_teacher_lesson(
     group_id: int,

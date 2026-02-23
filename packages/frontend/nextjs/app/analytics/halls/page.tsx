@@ -134,6 +134,15 @@ export default function HallAnalyticsPage() {
     document.body.removeChild(link)
     window.URL.revokeObjectURL(url)
 
+    API.admin.logAuditEvent({
+      action_key: "admin.export.halls.csv",
+      action_label: "Экспорт данных / Аналитика залов (CSV)",
+      meta: {
+        rowsCount: hallsData.length,
+        totalHours,
+      },
+    })
+
     toast.success("Файл успешно загружен!")
   }
 

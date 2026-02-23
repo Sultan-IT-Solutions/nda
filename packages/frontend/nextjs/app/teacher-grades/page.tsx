@@ -189,23 +189,22 @@ export default function TeacherGradesPage() {
     const values: number[] = []
     for (const lesson of sortedLessons) {
       const key = `${lesson.id}:${studentId}`
-      const draft = journalDrafts[key]
-      const raw = draft?.value ?? gradeByLessonAndStudent.get(key)?.value
-      if (raw === "" || raw === null || raw === undefined) continue
+      const raw = gradeByLessonAndStudent.get(key)?.value
+  if (raw === null || raw === undefined) continue
       const val = typeof raw === "number" ? raw : Number(raw)
       if (Number.isFinite(val)) values.push(val)
     }
     if (values.length === 0) return "—"
     const avg = values.reduce((sum, v) => sum + v, 0) / values.length
-    return avg.toFixed(2)
+
+    const integer = avg % 1 >= 0.5 ? Math.ceil(avg) : Math.floor(avg)
+    return `${integer.toFixed(0)}.00`
   }
 
   const getAverageClass = (value: string) => {
     const numeric = Number(value)
     if (!Number.isFinite(numeric)) return "text-muted-foreground"
-    if (numeric >= 4) return "text-emerald-600"
-    if (numeric < 3) return "text-rose-600"
-    return "text-amber-600"
+    return "text-foreground"
   }
 
   const filteredGroups = useMemo(() => {

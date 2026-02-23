@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from app.database import get_connection
 from app.auth import require_auth, require_teacher, require_student
 from app.system_settings import get_bool_setting, get_str_setting, get_settings_values, set_setting_value
+from app.audit_log import log_action
 
 router = APIRouter(prefix="/grades", tags=["Grades"])
 
@@ -322,7 +323,92 @@ async def upsert_grade(data: UpsertGradeRequest, user: dict = Depends(require_te
         RETURNING id
         """
 
+    before_grade = None
+    try:
+        before_grade = await pool.fetchrow(
+            """
+            SELECT id, value, grade_value, comment, grade_date
+            FROM grades
+            WHERE student_id = $1 AND lesson_id = $2 AND deleted_at IS NULL
+            """,
+            student_id,
+            lesson_id,
+        )
+    except Exception:
+        before_grade = None
+
     row = await pool.fetchrow(sql, *params)
+
+    try:
+        group = await pool.fetchrow("SELECT id, name, duration_minutes FROM groups WHERE id = $1", group_id)
+        group_name = group["name"] if group else str(group_id)
+
+        student = await pool.fetchrow(
+            """
+            SELECT s.id AS student_id, u.name AS student_name, u.email AS student_email
+            FROM students s
+            JOIN users u ON u.id = s.user_id
+            WHERE s.id = $1
+            """,
+            student_id,
+        )
+        student_name = student["student_name"] if student else str(student_id)
+        student_email = student["student_email"] if student else None
+        student_identity = f"{student_name}{(' <' + student_email + '>') if student_email else ''}"
+
+        lesson = await pool.fetchrow(
+            """
+            SELECT id, start_time
+            FROM lessons
+            WHERE id = $1
+            """,
+            lesson_id,
+        )
+        lesson_start = lesson["start_time"] if lesson else None
+        dt_label = grade_dt.isoformat() if grade_dt else date.today().isoformat()
+        if lesson_start:
+            try:
+                dt_label = lesson_start.strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                pass
+
+        before_value = None
+        if before_grade:
+            before_value = before_grade.get("grade_value") if before_grade.get("grade_value") is not None else before_grade.get("value")
+        after_value = float(data.value) if data.value is not None else None
+
+        action_key = "teacher.grades.created" if not before_grade else "teacher.grades.updated"
+        value_part = ""
+        if before_grade and before_value != after_value:
+            value_part = f": оценка: {before_value} → {after_value}"
+        elif not before_grade:
+            value_part = f": оценка: {after_value}"
+
+        await log_action(
+            actor=user,
+            action_key=action_key,
+            action_label=f"Изменение оценки: группа: {group_name}: {dt_label}: студент: {student_identity}" + value_part,
+            meta={
+                "group_id": group_id,
+                "group_name": group_name,
+                "student_id": student_id,
+                "student_name": student_name,
+                "student_email": student_email,
+                "lesson_id": lesson_id,
+                "lesson_start": lesson_start.isoformat() if lesson_start else None,
+                "grade_date": grade_dt.isoformat() if grade_dt else None,
+                "before": {
+                    "value": before_value,
+                    "comment": before_grade.get("comment") if before_grade else None,
+                },
+                "after": {
+                    "value": after_value,
+                    "comment": data.comment,
+                },
+            },
+        )
+    except Exception:
+        pass
 
     return {"message": "Grade saved", "grade_id": row["id"]}
 
@@ -372,6 +458,20 @@ async def delete_grade(data: DeleteGradeRequest, user: dict = Depends(require_te
     if not await teacher_has_access_to_group(pool, teacher_id, group_id):
         raise HTTPException(status_code=403, detail="Access denied to this group")
 
+    before_grade = None
+    try:
+        before_grade = await pool.fetchrow(
+            """
+            SELECT id, value, grade_value, comment, grade_date
+            FROM grades
+            WHERE student_id = $1 AND lesson_id = $2 AND deleted_at IS NULL
+            """,
+            student_id,
+            lesson_id,
+        )
+    except Exception:
+        before_grade = None
+
     result = await pool.execute(
         """
         UPDATE grades
@@ -382,6 +482,58 @@ async def delete_grade(data: DeleteGradeRequest, user: dict = Depends(require_te
         student_id,
         lesson_id,
     )
+
+    try:
+        group = await pool.fetchrow("SELECT id, name FROM groups WHERE id = $1", group_id)
+        group_name = group["name"] if group else str(group_id)
+
+        student = await pool.fetchrow(
+            """
+            SELECT s.id AS student_id, u.name AS student_name, u.email AS student_email
+            FROM students s
+            JOIN users u ON u.id = s.user_id
+            WHERE s.id = $1
+            """,
+            student_id,
+        )
+        student_name = student["student_name"] if student else str(student_id)
+        student_email = student["student_email"] if student else None
+        student_identity = f"{student_name}{(' <' + student_email + '>') if student_email else ''}"
+
+        lesson = await pool.fetchrow("SELECT id, start_time FROM lessons WHERE id = $1", lesson_id)
+        lesson_start = lesson["start_time"] if lesson else None
+        dt_label = None
+        if lesson_start:
+            try:
+                dt_label = lesson_start.strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                dt_label = None
+
+        before_value = None
+        if before_grade:
+            before_value = before_grade.get("grade_value") if before_grade.get("grade_value") is not None else before_grade.get("value")
+
+        await log_action(
+            actor=user,
+            action_key="teacher.grades.deleted",
+            action_label=f"Удаление оценки: группа: {group_name}: {(dt_label or '—')}: студент: {student_identity}: оценка: {before_value if before_value is not None else '—'}",
+            meta={
+                "group_id": group_id,
+                "group_name": group_name,
+                "student_id": student_id,
+                "student_name": student_name,
+                "student_email": student_email,
+                "lesson_id": lesson_id,
+                "lesson_start": lesson_start.isoformat() if lesson_start else None,
+                "before": {
+                    "value": before_value,
+                    "comment": before_grade.get("comment") if before_grade else None,
+                    "grade_date": before_grade.get("grade_date") if before_grade else None,
+                },
+            },
+        )
+    except Exception:
+        pass
 
     return {"message": "Grade deleted", "result": result}
 

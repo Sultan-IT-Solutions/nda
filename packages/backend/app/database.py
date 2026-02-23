@@ -10,6 +10,9 @@ _trial_schema_lock = asyncio.Lock()
 
 _settings_schema_ready: bool = False
 _settings_schema_lock = asyncio.Lock()
+
+_audit_schema_ready: bool = False
+_audit_schema_lock = asyncio.Lock()
 async def connect_to_database():
     global pool
     settings = get_settings()
@@ -107,3 +110,41 @@ async def ensure_system_settings_schema(db_pool: asyncpg.Pool) -> None:
                 """
             )
         _settings_schema_ready = True
+
+
+async def ensure_audit_logs_schema(db_pool: asyncpg.Pool) -> None:
+    """Ensures audit_logs table exists (lightweight, idempotent)."""
+    global _audit_schema_ready
+    if _audit_schema_ready:
+        return
+    async with _audit_schema_lock:
+        if _audit_schema_ready:
+            return
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS audit_logs (
+                    id BIGSERIAL PRIMARY KEY,
+                    actor_user_id INTEGER,
+                    actor_role TEXT,
+                    actor_name TEXT,
+                    actor_email TEXT,
+                    action_key TEXT NOT NULL,
+                    action_label TEXT,
+                    meta_json JSONB,
+                    ip TEXT,
+                    user_agent TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_user_id ON audit_logs(actor_user_id)"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_logs_action_key ON audit_logs(action_key)"
+            )
+        _audit_schema_ready = True

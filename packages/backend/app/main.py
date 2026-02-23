@@ -14,7 +14,7 @@ connect_to_database = None
 close_database = None
 get_settings = None
 
-auth = users = students = groups = teachers = admin = lessons = categories = notifications = grades = None
+auth = users = students = groups = teachers = admin = lessons = categories = notifications = grades = audit_logs = audit_ingest = None
 syssettings = None
 
 try:
@@ -31,6 +31,8 @@ try:
     from routes import (
         admin,
         auth,
+        audit_logs,
+        audit_ingest,
         categories,
         grades,
         groups,
@@ -245,3 +247,7 @@ if syssettings is not None:
     app.include_router(syssettings.router)
 if grades is not None:
     app.include_router(grades.router)
+if audit_logs is not None:
+    app.include_router(audit_logs.router)
+if audit_ingest is not None:
+    app.include_router(audit_ingest.router)

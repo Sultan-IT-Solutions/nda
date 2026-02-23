@@ -1,5 +1,6 @@
 "use client"
 
+import { formatAverage00 } from "@/lib/grade-format"
 import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { User } from "@phosphor-icons/react"
@@ -808,7 +809,7 @@ export default function ProfilePage() {
                     .map((grade) => (Number.isFinite(grade.value) ? grade.value : null))
                     .filter((value): value is number => value !== null)
                   const groupAverage = groupValues.length > 0
-                    ? (groupValues.reduce((sum, value) => sum + value, 0) / groupValues.length).toFixed(2)
+                    ? formatAverage00(groupValues.reduce((sum, value) => sum + value, 0) / groupValues.length)
                     : null
 
                   const isOpen = openGradesGroupId === group.id

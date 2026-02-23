@@ -33,8 +33,8 @@ type SettingsState = {
 }
 
 type PendingPatch = {
-  key: "registration" | "trial"
-  value: boolean
+  key: "registration" | "trial" | "teacherEdit" | "gradesScale"
+  value: boolean | "0-5" | "0-100"
 }
 
 export default function AdminSettingsPage() {
@@ -122,14 +122,43 @@ export default function AdminSettingsPage() {
     setConfirmOpen(true)
   }
 
-  const applyPendingToggle = async () => {
+  const openGradesScaleConfirm = (nextScale: "0-5" | "0-100") => {
+    if (settings.gradesScale === nextScale) return
+    setPendingPatch({ key: "gradesScale", value: nextScale })
+    setConfirmTitle("Изменить шкалу оценивания?")
+    setConfirmDescription(
+      nextScale === "0-100"
+        ? "Шкала оценивания будет изменена на 0–100. Это влияет на отображение средних значений и ввод новых оценок. Текущие оценки будут перерасчитаны автоматически."
+        : "Шкала оценивания будет изменена на 0–5. Это влияет на отображение средних значений и ввод новых оценок. Текущие оценки будут перерасчитаны автоматически.",
+    )
+    setConfirmOpen(true)
+  }
+
+  const openTeacherEditConfirm = (nextValue: boolean) => {
+    setPendingPatch({ key: "teacherEdit", value: nextValue })
+    setConfirmTitle(nextValue ? "Разрешить редактирование учителями?" : "Запретить редактирование учителями?")
+    setConfirmDescription(
+      nextValue
+        ? "Учителя смогут выставлять и изменять оценки."
+        : "Учителя не смогут выставлять и изменять оценки, пока вы снова не включите эту опцию.",
+    )
+    setConfirmOpen(true)
+  }
+
+  const applyPendingPatch = async () => {
     if (!pendingPatch) return
     setUpdatingKey(pendingPatch.key)
     try {
-      const res =
-        pendingPatch.key === "registration"
-          ? await API.admin.updateSettings({ registration_enabled: pendingPatch.value })
-          : await API.admin.updateSettings({ trial_lessons_enabled: pendingPatch.value })
+      let res: any
+      if (pendingPatch.key === "registration") {
+        res = await API.admin.updateSettings({ registration_enabled: Boolean(pendingPatch.value) })
+      } else if (pendingPatch.key === "trial") {
+        res = await API.admin.updateSettings({ trial_lessons_enabled: Boolean(pendingPatch.value) })
+      } else if (pendingPatch.key === "gradesScale") {
+        res = await API.admin.updateSettings({ grades_scale: pendingPatch.value as "0-5" | "0-100" })
+      } else {
+        res = await API.admin.updateSettings({ teacher_edit_enabled: Boolean(pendingPatch.value) })
+      }
 
       const s = res?.settings ?? {}
       setSettings((prev) => ({
@@ -138,10 +167,9 @@ export default function AdminSettingsPage() {
         trialLessonsEnabled: typeof s["trial_lessons.enabled"] === "boolean" ? s["trial_lessons.enabled"] : prev.trialLessonsEnabled,
         gradesScale: s["grades.scale"] === "0-100" ? "0-100" : "0-5",
         teacherEditEnabled:
-          typeof s["grades.teacher_edit_enabled"] === "boolean"
-            ? s["grades.teacher_edit_enabled"]
-            : prev.teacherEditEnabled,
+          typeof s["grades.teacher_edit_enabled"] === "boolean" ? s["grades.teacher_edit_enabled"] : prev.teacherEditEnabled,
       }))
+
       toast.success("Изменение применено")
     } catch (err) {
       const message = handleApiError(err)
@@ -153,44 +181,12 @@ export default function AdminSettingsPage() {
     }
   }
 
-  const updateGradesScale = async (nextScale: "0-5" | "0-100") => {
-    if (settings.gradesScale === nextScale) return
-    setUpdatingKey("gradesScale")
-    try {
-      const res = await API.admin.updateSettings({ grades_scale: nextScale })
-      const s = res?.settings ?? {}
-      setSettings((prev) => ({
-        ...prev,
-        gradesScale: s["grades.scale"] === "0-100" ? "0-100" : "0-5",
-      }))
-      toast.success("Шкала оценивания обновлена")
-    } catch (err) {
-      const message = handleApiError(err)
-      toast.error(message)
-    } finally {
-      setUpdatingKey(null)
-    }
+  const updateGradesScale = (nextScale: "0-5" | "0-100") => {
+    openGradesScaleConfirm(nextScale)
   }
 
-  const toggleTeacherEdit = async (nextValue: boolean) => {
-    setUpdatingKey("teacherEdit")
-    try {
-      const res = await API.admin.updateSettings({ teacher_edit_enabled: nextValue })
-      const s = res?.settings ?? {}
-      setSettings((prev) => ({
-        ...prev,
-        teacherEditEnabled:
-          typeof s["grades.teacher_edit_enabled"] === "boolean"
-            ? s["grades.teacher_edit_enabled"]
-            : prev.teacherEditEnabled,
-      }))
-      toast.success("Настройки оценок обновлены")
-    } catch (err) {
-      const message = handleApiError(err)
-      toast.error(message)
-    } finally {
-      setUpdatingKey(null)
-    }
+  const toggleTeacherEdit = (nextValue: boolean) => {
+    openTeacherEditConfirm(nextValue)
   }
 
   if (loading) {
@@ -258,7 +254,7 @@ export default function AdminSettingsPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="mt-6">
             <CardHeader>
               <CardTitle className="text-base">Оценивание</CardTitle>
             </CardHeader>
@@ -321,7 +317,7 @@ export default function AdminSettingsPage() {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel disabled={updatingKey !== null}>Отмена</AlertDialogCancel>
-                <AlertDialogAction onClick={applyPendingToggle} disabled={updatingKey !== null}>
+                <AlertDialogAction onClick={applyPendingPatch} disabled={updatingKey !== null}>
                   Подтвердить
                 </AlertDialogAction>
               </AlertDialogFooter>

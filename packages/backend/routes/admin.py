@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from pydantic import BaseModel, field_validator
 from typing import Optional, List, Union
 from datetime import datetime, time
@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from app.database import get_connection, ensure_trial_lesson_schema
 from app.system_settings import get_bool_setting
 from app.auth import require_admin, require_admin_or_teacher
+from app.audit_log import log_action
 router = APIRouter(prefix="/admin", tags=["Admin"])
 ALMATY_TZ = ZoneInfo("Asia/Almaty")
 UTC_TZ = ZoneInfo("UTC")
@@ -102,6 +103,12 @@ async def sync_group_schedules_with_lessons(pool, group_id: int):
             group_id, pattern['day_of_week'], pattern['lesson_time']
         )
 async def save_group_schedule(pool, group_id: int, schedules: dict):
+    group_row = None
+    try:
+        group_row = await pool.fetchrow("SELECT id, name FROM groups WHERE id = $1", group_id)
+    except Exception:
+        group_row = None
+
     await pool.execute("DELETE FROM group_schedules WHERE group_id = $1", group_id)
     for day_name, time_str in schedules.items():
         if not time_str or not time_str.strip():
@@ -122,6 +129,7 @@ async def save_group_schedule(pool, group_id: int, schedules: dict):
             """,
             group_id, day_num, start_time
         )
+
 
 class CreateHallRequest(BaseModel):
     name: str
@@ -1298,8 +1306,9 @@ async def get_group_details(group_id: int, user: dict = Depends(require_admin)):
         "category_name": row["category_name"],
         "duration_minutes": row["duration_minutes"]
     }
+
 @router.post("/groups")
-async def create_group(data: CreateGroupRequest, user: dict = Depends(require_admin)):
+async def create_group(data: CreateGroupRequest, request: Request, user: dict = Depends(require_admin)):
     from datetime import datetime
     pool = await get_connection()
     try:
@@ -1336,15 +1345,45 @@ async def create_group(data: CreateGroupRequest, user: dict = Depends(require_ad
                         """,
                         group_id, data.main_teacher_id
                     )
+        await log_action(
+            actor=user,
+            action_key="admin.groups.created",
+            action_label=f"Создание группы: {data.name}",
+            meta={"group_id": group_id, "group_name": data.name},
+            request=request,
+        )
         return {"group_id": group_id, "message": "Group created successfully"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
     except Exception as e:
         print(f"Error creating group: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to create group: {str(e)}")
+    
 @router.put("/groups/{group_id}")
-async def update_group(group_id: int, data: UpdateGroupRequest, user: dict = Depends(require_admin)):
+async def update_group(group_id: int, data: UpdateGroupRequest, request: Request, user: dict = Depends(require_admin)):
     pool = await get_connection()
+    before = await pool.fetchrow(
+        """
+        SELECT id, name, category_id, hall_id, duration_minutes, capacity, recurring_until, start_date,
+               is_closed, is_trial, trial_price, trial_currency
+        FROM groups
+        WHERE id = $1
+        """,
+        group_id,
+    )
+    if not before:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    old_main_teacher_id = None
+    if data.main_teacher_id is not None:
+        try:
+            old_main_teacher_id = await pool.fetchval(
+                "SELECT teacher_id FROM group_teachers WHERE group_id = $1 AND is_main = TRUE",
+                group_id,
+            )
+        except Exception:
+            old_main_teacher_id = None
+
     updates = []
     values = []
     param_count = 1
@@ -1440,10 +1479,132 @@ async def update_group(group_id: int, data: UpdateGroupRequest, user: dict = Dep
             )
     if data.schedules is not None:
         await save_group_schedule(pool, group_id, data.schedules)
+
+    try:
+        after = await pool.fetchrow(
+            """
+            SELECT id, name, category_id, hall_id, duration_minutes, capacity, recurring_until, start_date,
+                   is_closed, is_trial, trial_price, trial_currency
+            FROM groups
+            WHERE id = $1
+            """,
+            group_id,
+        )
+        changes = {}
+        if after:
+            for k in after.keys():
+                if before.get(k) != after.get(k):
+                    changes[k] = {"from": before.get(k), "to": after.get(k)}
+        if changes:
+            hall_change = changes.get("hall_id")
+            if hall_change is not None:
+                old_hall_id = hall_change.get("from")
+                new_hall_id = hall_change.get("to")
+
+                old_hall_name = None
+                new_hall_name = None
+                if old_hall_id:
+                    old_hall_name = await pool.fetchval("SELECT name FROM halls WHERE id = $1", old_hall_id)
+                if new_hall_id:
+                    new_hall_name = await pool.fetchval("SELECT name FROM halls WHERE id = $1", new_hall_id)
+
+                await log_action(
+                    actor=user,
+                    action_key="admin.groups.hallChanged",
+                    action_label=f"Смена зала в группе: {(after['name'] if after else before['name'])}: {(old_hall_name or '—')} → {(new_hall_name or '—')}",
+                    meta={
+                        "group_id": group_id,
+                        "group_name": (after["name"] if after else before["name"]),
+                        "hall": {
+                            "from": {"id": old_hall_id, "name": old_hall_name},
+                            "to": {"id": new_hall_id, "name": new_hall_name},
+                        },
+                    },
+                    request=request,
+                )
+
+            group_name_for_label = (after["name"] if after else before["name"])
+            group_name_for_meta = (after["name"] if after else before["name"])
+
+            field_specs = {
+                "name": ("admin.groups.nameChanged", "Изменение названия группы"),
+                "category_id": ("admin.groups.categoryChanged", "Изменение направления группы"),
+                "duration_minutes": ("admin.groups.durationChanged", "Изменение длительности занятия"),
+                "capacity": ("admin.groups.capacityChanged", "Изменение вместимости группы"),
+                "start_date": ("admin.groups.startDateChanged", "Изменение даты начала"),
+                "recurring_until": ("admin.groups.endDateChanged", "Изменение даты окончания"),
+                "is_trial": ("admin.groups.trialModeChanged", "Изменение режима пробного"),
+                "trial_price": ("admin.groups.trialPriceChanged", "Изменение цены пробного урока"),
+                "trial_currency": ("admin.groups.trialCurrencyChanged", "Изменение валюты пробного урока"),
+                "is_closed": ("admin.groups.activeStatusChanged", "Изменение статуса активности"),
+            }
+
+            for field_name, change in changes.items():
+                if field_name == "hall_id":
+                    continue
+                spec = field_specs.get(field_name)
+                if spec is None:
+                    continue
+                action_key, title = spec
+                await log_action(
+                    actor=user,
+                    action_key=action_key,
+                    action_label=f"{title}: {group_name_for_label}: {change.get('from')} → {change.get('to')}",
+                    meta={
+                        "group_id": group_id,
+                        "group_name": group_name_for_meta,
+                        "field": field_name,
+                        "from": change.get("from"),
+                        "to": change.get("to"),
+                    },
+                    request=request,
+                )
+            if data.main_teacher_id is not None:
+                new_main_teacher_id = None
+                try:
+                    new_main_teacher_id = await pool.fetchval(
+                        "SELECT teacher_id FROM group_teachers WHERE group_id = $1 AND is_main = TRUE",
+                        group_id,
+                    )
+                except Exception:
+                    new_main_teacher_id = None
+
+                if old_main_teacher_id != new_main_teacher_id:
+                    old_teacher_name = None
+                    new_teacher_name = None
+                    if old_main_teacher_id:
+                        old_teacher_name = await pool.fetchval(
+                            "SELECT u.name FROM teachers t JOIN users u ON u.id = t.user_id WHERE t.id = $1",
+                            old_main_teacher_id,
+                        )
+                    if new_main_teacher_id:
+                        new_teacher_name = await pool.fetchval(
+                            "SELECT u.name FROM teachers t JOIN users u ON u.id = t.user_id WHERE t.id = $1",
+                            new_main_teacher_id,
+                        )
+
+                    await log_action(
+                        actor=user,
+                        action_key="admin.groupTeachers.mainChanged",
+                        action_label=f"Смена главного преподавателя: {group_name_for_label}: {(old_teacher_name or '—')} → {(new_teacher_name or '—')}",
+                        meta={
+                            "group_id": group_id,
+                            "group_name": group_name_for_meta,
+                            "teacher": {
+                                "from": {"id": old_main_teacher_id, "name": old_teacher_name},
+                                "to": {"id": new_main_teacher_id, "name": new_teacher_name},
+                            },
+                        },
+                        request=request,
+                    )
+    except Exception:
+        pass
     return {"message": "Group updated"}
+
 @router.delete("/groups/{group_id}")
-async def delete_group(group_id: int, force: bool = False, user: dict = Depends(require_admin)):
+async def delete_group(group_id: int, request: Request, force: bool = False, user: dict = Depends(require_admin)):
     pool = await get_connection()
+    group = await pool.fetchrow("SELECT id, name FROM groups WHERE id = $1", group_id)
     async with pool.acquire() as conn:
         async with conn.transaction():
             if not force:
@@ -1464,26 +1625,49 @@ async def delete_group(group_id: int, force: bool = False, user: dict = Depends(
             result = await conn.execute("DELETE FROM groups WHERE id = $1", group_id)
             if result == "DELETE 0":
                 raise HTTPException(status_code=404, detail="Group not found")
+    await log_action(
+        actor=user,
+        action_key="admin.groups.deleted",
+    action_label=f"Удаление группы: {(group['name'] if group else group_id)}",
+        meta={"group_id": group_id, "group_name": (group["name"] if group else None), "force": bool(force)},
+        request=request,
+    )
     return {"message": "Group deleted"}
 @router.post("/groups/{group_id}/close")
-async def close_group(group_id: int, user: dict = Depends(require_admin)):
+async def close_group(group_id: int, request: Request, user: dict = Depends(require_admin)):
     pool = await get_connection()
+    group = await pool.fetchrow("SELECT id, name FROM groups WHERE id = $1", group_id)
     result = await pool.execute(
         "UPDATE groups SET is_closed = TRUE WHERE id = $1",
         group_id
     )
     if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="Group not found")
+    await log_action(
+        actor=user,
+        action_key="admin.groups.closed",
+    action_label=f"Закрытие группы: {(group['name'] if group else group_id)}",
+        meta={"group_id": group_id, "group_name": (group["name"] if group else None)},
+        request=request,
+    )
     return {"message": "Group closed"}
 @router.post("/groups/{group_id}/open")
-async def open_group(group_id: int, user: dict = Depends(require_admin)):
+async def open_group(group_id: int, request: Request, user: dict = Depends(require_admin)):
     pool = await get_connection()
+    group = await pool.fetchrow("SELECT id, name FROM groups WHERE id = $1", group_id)
     result = await pool.execute(
         "UPDATE groups SET is_closed = FALSE WHERE id = $1",
         group_id
     )
     if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="Group not found")
+    await log_action(
+        actor=user,
+        action_key="admin.groups.opened",
+    action_label=f"Открытие группы: {(group['name'] if group else group_id)}",
+        meta={"group_id": group_id, "group_name": (group["name"] if group else None)},
+        request=request,
+    )
     return {"message": "Group opened"}
 @router.get("/halls")
 async def get_halls(user: dict = Depends(require_admin)):
@@ -1573,16 +1757,26 @@ async def get_hall_details(hall_id: int, user: dict = Depends(require_admin)):
         }
     }
 @router.post("/halls")
-async def create_hall(data: CreateHallRequest, user: dict = Depends(require_admin)):
+async def create_hall(data: CreateHallRequest, request: Request, user: dict = Depends(require_admin)):
     pool = await get_connection()
     result = await pool.fetchrow(
         "INSERT INTO halls (name, capacity) VALUES ($1, $2) RETURNING id",
         data.name, data.capacity
     )
+    await log_action(
+        actor=user,
+        action_key="admin.halls.created",
+        action_label="Создание аудитории",
+        meta={"hall_id": result["id"], "hall_name": data.name},
+        request=request,
+    )
     return {"hall_id": result["id"]}
 @router.put("/halls/{hall_id}")
 async def update_hall(hall_id: int, data: UpdateHallRequest, user: dict = Depends(require_admin)):
     pool = await get_connection()
+    before = await pool.fetchrow("SELECT id, name, capacity FROM halls WHERE id = $1", hall_id)
+    if not before:
+        raise HTTPException(status_code=404, detail="Hall not found")
     updates = []
     values = []
     param_count = 1
@@ -1601,9 +1795,29 @@ async def update_hall(hall_id: int, data: UpdateHallRequest, user: dict = Depend
         f"UPDATE halls SET {', '.join(updates)} WHERE id = ${param_count}",
         *values
     )
+
+    try:
+        changes = {}
+        if data.name is not None and data.name != before["name"]:
+            changes["name"] = {"from": before["name"], "to": data.name}
+        if data.capacity is not None and data.capacity != before["capacity"]:
+            changes["capacity"] = {"from": before["capacity"], "to": data.capacity}
+
+        await log_action(
+            actor=user,
+            action_key="admin.halls.updated",
+            action_label=f"Изменение аудитории: {before['name']}",
+            meta={
+                "hall_id": hall_id,
+                "hall_name": before["name"],
+                "changes": changes,
+            },
+        )
+    except Exception:
+        pass
     return {"message": "Hall updated"}
 @router.delete("/halls/{hall_id}")
-async def delete_hall(hall_id: int, user: dict = Depends(require_admin)):
+async def delete_hall(hall_id: int, request: Request, user: dict = Depends(require_admin)):
     pool = await get_connection()
     usage_check = await pool.fetchval(
         "SELECT COUNT(*) FROM groups WHERE hall_id = $1", hall_id
@@ -1616,6 +1830,13 @@ async def delete_hall(hall_id: int, user: dict = Depends(require_admin)):
     result = await pool.execute("DELETE FROM halls WHERE id = $1", hall_id)
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Hall not found")
+    await log_action(
+        actor=user,
+        action_key="admin.halls.deleted",
+        action_label="Удаление аудитории",
+        meta={"hall_id": hall_id},
+        request=request,
+    )
     return {"message": "Hall deleted"}
 @router.get("/teachers")
 async def get_teachers(user: dict = Depends(require_admin)):
@@ -1682,7 +1903,7 @@ async def get_teacher_groups(teacher_id: int, user: dict = Depends(require_admin
     return {"schedules": schedules}
 
 @router.post("/teachers")
-async def create_teacher(data: CreateTeacherRequest, user: dict = Depends(require_admin)):
+async def create_teacher(data: CreateTeacherRequest, request: Request, user: dict = Depends(require_admin)):
     from app.auth import get_password_hash
     pool = await get_connection()
     hashed_password = get_password_hash(data.password)
@@ -1704,12 +1925,28 @@ async def create_teacher(data: CreateTeacherRequest, user: dict = Depends(requir
                 """,
                 user_row["id"], data.hourly_rate, data.bio
             )
+    await log_action(
+        actor=user,
+        action_key="admin.teachers.created",
+        action_label="Создание учителя",
+        meta={"teacher_id": teacher_row["id"], "teacher_email": data.email},
+        request=request,
+    )
     return {"teacher_id": teacher_row["id"]}
 
 @router.put("/teachers/{teacher_id}")
 async def update_teacher(teacher_id: int, data: UpdateTeacherRequest, user: dict = Depends(require_admin)):
     from app.auth import get_password_hash
     pool = await get_connection()
+    before = await pool.fetchrow(
+        """
+        SELECT t.id AS teacher_id, u.id AS user_id, u.name, u.email, t.hourly_rate, t.bio
+        FROM teachers t
+        JOIN users u ON u.id = t.user_id
+        WHERE t.id = $1
+        """,
+        teacher_id,
+    )
     async with pool.acquire() as conn:
         async with conn.transaction():
             teacher_row = await conn.fetchrow(
@@ -1756,10 +1993,38 @@ async def update_teacher(teacher_id: int, data: UpdateTeacherRequest, user: dict
                     f"UPDATE teachers SET {', '.join(teacher_updates)} WHERE id = ${param_count}",
                     *teacher_values
                 )
+
+    try:
+        if before:
+            changes = {}
+            if data.name is not None and data.name != before["name"]:
+                changes["name"] = {"from": before["name"], "to": data.name}
+            if data.email is not None and data.email != before["email"]:
+                changes["email"] = {"from": before["email"], "to": data.email}
+            if data.password is not None:
+                changes["password"] = {"from": "***", "to": "***"}
+            if data.hourly_rate is not None and data.hourly_rate != before["hourly_rate"]:
+                changes["hourly_rate"] = {"from": before["hourly_rate"], "to": data.hourly_rate}
+            if data.bio is not None and data.bio != before["bio"]:
+                changes["bio"] = {"from": before["bio"], "to": data.bio}
+
+            await log_action(
+                actor=user,
+                action_key="admin.teachers.updated",
+                action_label=f"Изменение учителя: {before['name']}",
+                meta={
+                    "teacher_id": teacher_id,
+                    "teacher_name": before["name"],
+                    "teacher_email": before["email"],
+                    "changes": changes,
+                },
+            )
+    except Exception:
+        pass
     return {"message": "Teacher updated"}
 
 @router.delete("/teachers/{teacher_id}")
-async def delete_teacher(teacher_id: int, user: dict = Depends(require_admin)):
+async def delete_teacher(teacher_id: int, request: Request, user: dict = Depends(require_admin)):
     pool = await get_connection()
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -1779,6 +2044,13 @@ async def delete_teacher(teacher_id: int, user: dict = Depends(require_admin)):
             user_id = teacher_row["user_id"]
             await conn.execute("DELETE FROM teachers WHERE id = $1", teacher_id)
             await conn.execute("DELETE FROM users WHERE id = $1", user_id)
+    await log_action(
+        actor=user,
+        action_key="admin.teachers.deleted",
+        action_label="Удаление учителя",
+        meta={"teacher_id": teacher_id},
+        request=request,
+    )
     return {"message": "Teacher deleted"}
 
 @router.get("/students")
@@ -1809,7 +2081,7 @@ async def get_students(user: dict = Depends(require_admin)):
         ]
     }
 @router.post("/students")
-async def create_student(data: CreateStudentRequest, user: dict = Depends(require_admin)):
+async def create_student(data: CreateStudentRequest, request: Request, user: dict = Depends(require_admin)):
     from app.auth import get_password_hash
     pool = await get_connection()
     hashed_password = get_password_hash(data.password)
@@ -1831,12 +2103,29 @@ async def create_student(data: CreateStudentRequest, user: dict = Depends(requir
                 """,
                 user_row["id"], data.phone_number
             )
+    await log_action(
+        actor=user,
+        action_key="admin.students.created",
+        action_label="Создание студента",
+        meta={"student_id": student_row["id"], "student_email": data.email},
+        request=request,
+    )
     return {"student_id": student_row["id"]}
 @router.put("/students/{student_id}")
 async def update_student(student_id: int, data: UpdateStudentRequest, user: dict = Depends(require_admin)):
     from app.auth import get_password_hash
     from datetime import datetime
     pool = await get_connection()
+    before = await pool.fetchrow(
+        """
+        SELECT s.id AS student_id, u.id AS user_id, u.name, u.email,
+               s.phone_number, s.comment, s.trial_used, s.subscription_until
+        FROM students s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.id = $1
+        """,
+        student_id,
+    )
     async with pool.acquire() as conn:
         async with conn.transaction():
             student_row = await conn.fetchrow(
@@ -1895,9 +2184,44 @@ async def update_student(student_id: int, data: UpdateStudentRequest, user: dict
                     f"UPDATE students SET {', '.join(student_updates)} WHERE id = ${param_count}",
                     *student_values
                 )
+
+    try:
+        if before:
+            changes = {}
+            if data.name is not None and data.name != before["name"]:
+                changes["name"] = {"from": before["name"], "to": data.name}
+            if data.email is not None and data.email != before["email"]:
+                changes["email"] = {"from": before["email"], "to": data.email}
+            if data.password is not None:
+                changes["password"] = {"from": "***", "to": "***"}
+            if data.phone_number is not None and data.phone_number != before["phone_number"]:
+                changes["phone_number"] = {"from": before["phone_number"], "to": data.phone_number}
+            if data.comment is not None and data.comment != before["comment"]:
+                changes["comment"] = {"from": before["comment"], "to": data.comment}
+            if data.trial_used is not None and data.trial_used != before["trial_used"]:
+                changes["trial_used"] = {"from": before["trial_used"], "to": data.trial_used}
+            if data.subscription_until is not None:
+                changes["subscription_until"] = {
+                    "from": before["subscription_until"].strftime("%Y-%m-%d") if before["subscription_until"] else None,
+                    "to": data.subscription_until,
+                }
+
+            await log_action(
+                actor=user,
+                action_key="admin.students.updated",
+                action_label=f"Изменение студента: {before['name']}",
+                meta={
+                    "student_id": student_id,
+                    "student_name": before["name"],
+                    "student_email": before["email"],
+                    "changes": changes,
+                },
+            )
+    except Exception:
+        pass
     return {"message": "Student updated"}
 @router.delete("/students/{student_id}")
-async def delete_student(student_id: int, user: dict = Depends(require_admin)):
+async def delete_student(student_id: int, request: Request, user: dict = Depends(require_admin)):
     pool = await get_connection()
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -1917,6 +2241,13 @@ async def delete_student(student_id: int, user: dict = Depends(require_admin)):
             user_id = student_row["user_id"]
             await conn.execute("DELETE FROM students WHERE id = $1", student_id)
             await conn.execute("DELETE FROM users WHERE id = $1", user_id)
+    await log_action(
+        actor=user,
+        action_key="admin.students.deleted",
+        action_label="Удаление студента",
+        meta={"student_id": student_id},
+        request=request,
+    )
     return {"message": "Student deleted"}
 
 
@@ -2094,8 +2425,18 @@ async def get_group_students(group_id: int, user: dict = Depends(require_admin))
         ]
     }
 @router.post("/groups/{group_id}/students")
-async def add_student_to_group(group_id: int, data: AddStudentToGroupRequest, user: dict = Depends(require_admin)):
+async def add_student_to_group(group_id: int, data: AddStudentToGroupRequest, request: Request, user: dict = Depends(require_admin)):
     pool = await get_connection()
+    group = await pool.fetchrow("SELECT id, name FROM groups WHERE id = $1", group_id)
+    student = await pool.fetchrow(
+        """
+        SELECT s.id, u.name, u.email
+        FROM students s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.id = $1
+        """,
+        data.student_id,
+    )
     await pool.execute(
         """
         INSERT INTO group_students (group_id, student_id, is_trial)
@@ -2104,26 +2445,95 @@ async def add_student_to_group(group_id: int, data: AddStudentToGroupRequest, us
         """,
         group_id, data.student_id, data.is_trial
     )
+    await log_action(
+        actor=user,
+        action_key="admin.groups.studentAdded",
+        action_label=(
+            f"Добавление студента в группу: {(group['name'] if group else group_id)}: "
+            f"{(student['name'] if student else data.student_id)}"
+            f"{(' <' + student['email'] + '>') if student and student.get('email') else ''}"
+            f"{(' (пробный)') if bool(data.is_trial) else ''}"
+        ),
+        meta={
+            "group_id": group_id,
+            "group_name": (group["name"] if group else None),
+            "student_id": data.student_id,
+            "student_name": (student["name"] if student else None),
+            "student_email": (student["email"] if student else None),
+            "is_trial": bool(data.is_trial),
+        },
+        request=request,
+    )
     return {"message": "Student added to group"}
 @router.delete("/groups/{group_id}/students/{student_id}")
-async def remove_student_from_group(group_id: int, student_id: int, user: dict = Depends(require_admin)):
+async def remove_student_from_group(group_id: int, student_id: int, request: Request, user: dict = Depends(require_admin)):
     pool = await get_connection()
+    group = await pool.fetchrow("SELECT id, name FROM groups WHERE id = $1", group_id)
+    student = await pool.fetchrow(
+        """
+        SELECT s.id, u.name, u.email
+        FROM students s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.id = $1
+        """,
+        student_id,
+    )
     await pool.execute(
         "DELETE FROM group_students WHERE group_id = $1 AND student_id = $2",
         group_id, student_id
     )
+    await log_action(
+        actor=user,
+        action_key="admin.groups.studentRemoved",
+        action_label=(
+            f"Удаление студента из группы: {(group['name'] if group else group_id)}: "
+            f"{(student['name'] if student else student_id)}"
+            f"{(' <' + student['email'] + '>') if student and student.get('email') else ''}"
+        ),
+        meta={
+            "group_id": group_id,
+            "group_name": (group["name"] if group else None),
+            "student_id": student_id,
+            "student_name": (student["name"] if student else None),
+            "student_email": (student["email"] if student else None),
+        },
+        request=request,
+    )
     return {"message": "Student removed from group"}
 @router.post("/groups/{group_id}/limit")
-async def update_group_limit(group_id: int, data: GroupLimitRequest, user: dict = Depends(require_admin)):
+async def update_group_limit(group_id: int, data: GroupLimitRequest, request: Request, user: dict = Depends(require_admin)):
     pool = await get_connection()
+    before = await pool.fetchrow("SELECT id, name, capacity FROM groups WHERE id = $1", group_id)
+    if not before:
+        raise HTTPException(status_code=404, detail="Group not found")
     await pool.execute(
         "UPDATE groups SET capacity = $1 WHERE id = $2",
         data.capacity, group_id
     )
+    try:
+        await log_action(
+            actor=user,
+            action_key="admin.groups.capacityUpdated",
+            action_label=f"Изменение вместимости группы: {before['name']}",
+            meta={"group_id": group_id, "group_name": before["name"], "from": before["capacity"], "to": data.capacity},
+            request=request,
+        )
+    except Exception:
+        pass
     return {"message": "Group capacity updated"}
 @router.post("/teachers/{teacher_id}/groups/{group_id}")
-async def assign_teacher_to_group(teacher_id: int, group_id: int, user: dict = Depends(require_admin)):
+async def assign_teacher_to_group(teacher_id: int, group_id: int, request: Request, user: dict = Depends(require_admin)):
     pool = await get_connection()
+    group = await pool.fetchrow("SELECT id, name FROM groups WHERE id = $1", group_id)
+    teacher = await pool.fetchrow(
+        """
+        SELECT t.id, u.name, u.email
+        FROM teachers t
+        JOIN users u ON u.id = t.user_id
+        WHERE t.id = $1
+        """,
+        teacher_id,
+    )
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
@@ -2146,10 +2556,33 @@ async def assign_teacher_to_group(teacher_id: int, group_id: int, user: dict = D
                 """,
                 group_id, teacher_id
             )
+    await log_action(
+        actor=user,
+        action_key="admin.groupTeachers.assignedMain",
+    action_label=f"Назначение основного учителя группы: {(group['name'] if group else group_id)}: {(teacher['name'] if teacher else teacher_id)}",
+        meta={
+            "group_id": group_id,
+            "group_name": (group["name"] if group else None),
+            "teacher_id": teacher_id,
+            "teacher_name": (teacher["name"] if teacher else None),
+            "teacher_email": (teacher["email"] if teacher else None),
+        },
+        request=request,
+    )
     return {"message": "Teacher assigned to group"}
 @router.post("/groups/{group_id}/teachers/{teacher_id}")
-async def add_teacher_to_group(group_id: int, teacher_id: int, user: dict = Depends(require_admin)):
+async def add_teacher_to_group(group_id: int, teacher_id: int, request: Request, user: dict = Depends(require_admin)):
     pool = await get_connection()
+    group = await pool.fetchrow("SELECT id, name FROM groups WHERE id = $1", group_id)
+    teacher = await pool.fetchrow(
+        """
+        SELECT t.id, u.name, u.email
+        FROM teachers t
+        JOIN users u ON u.id = t.user_id
+        WHERE t.id = $1
+        """,
+        teacher_id,
+    )
     existing_count = await pool.fetchval(
         "SELECT COUNT(*) FROM group_teachers WHERE group_id = $1",
         group_id
@@ -2163,19 +2596,58 @@ async def add_teacher_to_group(group_id: int, teacher_id: int, user: dict = Depe
         """,
         group_id, teacher_id, is_main
     )
+    await log_action(
+        actor=user,
+        action_key="admin.groupTeachers.added",
+    action_label=f"Добавление учителя в группу: {(group['name'] if group else group_id)}: {(teacher['name'] if teacher else teacher_id)}",
+        meta={
+            "group_id": group_id,
+            "group_name": (group["name"] if group else None),
+            "teacher_id": teacher_id,
+            "teacher_name": (teacher["name"] if teacher else None),
+            "teacher_email": (teacher["email"] if teacher else None),
+            "is_main": bool(is_main),
+        },
+        request=request,
+    )
     return {"message": "Teacher added to group"}
+
 @router.delete("/groups/{group_id}/teachers/{teacher_id}")
-async def remove_teacher_from_group(group_id: int, teacher_id: int, user: dict = Depends(require_admin)):
-    """Remove a teacher from a group"""
+async def remove_teacher_from_group(group_id: int, teacher_id: int, request: Request, user: dict = Depends(require_admin)):
     pool = await get_connection()
+    group = await pool.fetchrow("SELECT id, name FROM groups WHERE id = $1", group_id)
+    teacher = await pool.fetchrow(
+        """
+        SELECT t.id, u.name, u.email
+        FROM teachers t
+        JOIN users u ON u.id = t.user_id
+        WHERE t.id = $1
+        """,
+        teacher_id,
+    )
     await pool.execute(
         "DELETE FROM group_teachers WHERE group_id = $1 AND teacher_id = $2",
         group_id, teacher_id
     )
+    await log_action(
+        actor=user,
+        action_key="admin.groupTeachers.removed",
+    action_label=f"Удаление учителя из группы: {(group['name'] if group else group_id)}: {(teacher['name'] if teacher else teacher_id)}",
+        meta={
+            "group_id": group_id,
+            "group_name": (group["name"] if group else None),
+            "teacher_id": teacher_id,
+            "teacher_name": (teacher["name"] if teacher else None),
+            "teacher_email": (teacher["email"] if teacher else None),
+        },
+        request=request,
+    )
     return {"message": "Teacher removed from group"}
+
 @router.post("/groups/{group_id}/attendance")
 async def save_attendance(group_id: int, data: SaveAttendanceRequest, user: dict = Depends(require_admin)):
     pool = await get_connection()
+    group = await pool.fetchrow("SELECT id, name FROM groups WHERE id = $1", group_id)
     async with pool.acquire() as conn:
         async with conn.transaction():
             for record in data.records:
@@ -2186,9 +2658,27 @@ async def save_attendance(group_id: int, data: SaveAttendanceRequest, user: dict
                     """,
                     group_id, record.student_id, record.attended, data.lesson_date
                 )
+    try:
+        total_records = len(data.records) if data.records is not None else 0
+        attended_count = sum(1 for r in data.records if getattr(r, "attended", False)) if data.records is not None else 0
+        await log_action(
+            actor=user,
+            action_key="admin.groups.attendanceSaved",
+            action_label=f"Сохранение посещаемости группы: {(group['name'] if group else group_id)}: {data.lesson_date}",
+            meta={
+                "group_id": group_id,
+                "group_name": (group["name"] if group else None),
+                "lesson_date": str(data.lesson_date),
+                "records_count": total_records,
+                "attended_count": attended_count,
+            },
+        )
+    except Exception:
+        pass
     return {"message": "Attendance saved"}
+
 @router.post("/groups/{group_id}/schedule")
-async def add_group_schedule(group_id: int, data: AddScheduleRequest, user: dict = Depends(require_admin)):
+async def add_group_schedule(group_id: int, data: AddScheduleRequest, request: Request, user: dict = Depends(require_admin)):
     pool = await get_connection()
     if data.day_of_week not in range(0, 7):
         raise HTTPException(status_code=400, detail="Invalid day_of_week. Must be 0-6 (Sunday-Saturday)")
@@ -2213,6 +2703,17 @@ async def add_group_schedule(group_id: int, data: AddScheduleRequest, user: dict
     )
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
+
+    before_row = await pool.fetchrow(
+        """
+        SELECT start_time, end_time, is_active
+        FROM group_schedules
+        WHERE group_id = $1 AND day_of_week = $2
+        """,
+        group_id,
+        data.day_of_week,
+    )
+
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
@@ -2257,7 +2758,121 @@ async def add_group_schedule(group_id: int, data: AddScheduleRequest, user: dict
                         )
                         lessons_created += 1
                     current_date += timedelta(days=7)
+        try:
+            before_start = before_row["start_time"].strftime("%H:%M") if before_row and before_row["start_time"] else None
+            before_end = before_row["end_time"].strftime("%H:%M") if before_row and before_row["end_time"] else None
+            before_active = bool(before_row["is_active"]) if before_row and before_row["is_active"] is not None else False
+
+            if before_row and before_active:
+                action_key = "admin.groups.scheduleUpdated"
+                action_label = f"Изменение расписания группы / {group['name']} / {data.day_of_week} / {before_start}-{before_end} → {data.start_time}-{data.end_time}"
+            else:
+                action_key = "admin.groups.scheduleAdded"
+                action_label = f"Добавление расписания группы / {group['name']} / {data.day_of_week} / {data.start_time}-{data.end_time}"
+
+            await log_action(
+                actor=user,
+                action_key=action_key,
+                action_label=action_label,
+                meta={
+                    "group_id": group_id,
+                    "group_name": group["name"],
+                    "day_of_week": data.day_of_week,
+                    "before": {
+                        "start_time": before_start,
+                        "end_time": before_end,
+                        "is_active": before_active,
+                    },
+                    "after": {
+                        "start_time": data.start_time,
+                        "end_time": data.end_time,
+                        "is_active": True,
+                    },
+                    "lessons_created": lessons_created if 'lessons_created' in locals() else 0,
+                },
+                request=request,
+            )
+        except Exception:
+            pass
+
         return {"message": f"Schedule added successfully. Created {lessons_created if 'lessons_created' in locals() else 0} lesson instances."}
+
+
+@router.delete("/groups/{group_id}/schedule/{day_of_week}")
+async def delete_group_schedule(group_id: int, day_of_week: int, request: Request, user: dict = Depends(require_admin)):
+    pool = await get_connection()
+    if day_of_week not in range(0, 7):
+        raise HTTPException(status_code=400, detail="Invalid day_of_week. Must be 0-6 (Sunday-Saturday)")
+
+    group = await pool.fetchrow("SELECT id, name FROM groups WHERE id = $1", group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    before_row = await pool.fetchrow(
+        """
+        SELECT start_time, is_active
+        FROM group_schedules
+        WHERE group_id = $1 AND day_of_week = $2
+        """,
+        group_id,
+        day_of_week,
+    )
+
+    deleted_lessons = 0
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "DELETE FROM group_schedules WHERE group_id = $1 AND day_of_week = $2",
+                group_id,
+                day_of_week,
+            )
+
+            if before_row and before_row["start_time"]:
+                deleted_lessons = await conn.fetchval(
+                    """
+                    WITH deleted AS (
+                        DELETE FROM lessons
+                        WHERE group_id = $1
+                          AND EXTRACT(DOW FROM start_time)::int = $2
+                          AND start_time::time = $3
+                          AND start_time >= NOW()
+                        RETURNING 1
+                    )
+                    SELECT COUNT(*) FROM deleted
+                    """,
+                    group_id,
+                    day_of_week,
+                    before_row["start_time"],
+                ) or 0
+
+            await sync_group_schedules_with_lessons(conn, group_id)
+
+    try:
+        before_start = before_row["start_time"].strftime("%H:%M") if before_row and before_row["start_time"] else None
+        before_active = bool(before_row["is_active"]) if before_row and before_row["is_active"] is not None else False
+        day_label = DAY_NAMES_BY_NUM.get(day_of_week, str(day_of_week))
+
+        await log_action(
+            actor=user,
+            action_key="admin.groups.scheduleDeleted",
+            action_label=f"Удаление расписания группы: {group['name']}: {day_label}: {before_start}",
+            meta={
+                "group_id": group_id,
+                "group_name": group["name"],
+                "day_of_week": day_of_week,
+                "before": {
+                    "start_time": before_start,
+                    "is_active": before_active,
+                },
+                "deleted_future_lessons": int(deleted_lessons or 0),
+            },
+            request=request,
+        )
+    except Exception:
+        pass
+
+    return {"message": "Schedule deleted"}
+    
 @router.post("/groups/{group_id}/lessons")
 async def create_group_lessons(group_id: int, data: CreateLessonScheduleRequest, user: dict = Depends(require_admin)):
     pool = await get_connection()
@@ -2381,7 +2996,49 @@ async def create_group_lessons(group_id: int, data: CreateLessonScheduleRequest,
                     else:
                         break
             await sync_group_schedules_with_lessons(conn, group_id)
-            return {"message": f"Created {lessons_created} lesson(s) successfully"}
+
+    try:
+        repeat_mode = "single"
+        repeat_until = None
+        if data.repeat_enabled:
+            repeat_mode = data.repeat_frequency or "repeat"
+            repeat_until = data.repeat_until
+
+        repeat_label_map = {
+            "single": "разово",
+            "weekly": "еженедельно",
+            "biweekly": "раз в 2 недели",
+            "monthly": "ежемесячно",
+            "repeat": "повтор",
+        }
+        repeat_label = repeat_label_map.get(repeat_mode, str(repeat_mode))
+        repeat_until_part = f": до {repeat_until}" if repeat_until else ""
+
+        await log_action(
+            actor=user,
+            action_key="admin.groups.lessonsCreated",
+            action_label=(
+                f"Создание занятий группы: {group['name']}: {data.date}: {data.start_time}-{data.end_time}: "
+                f"{repeat_label}{repeat_until_part}: создано {lessons_created}"
+            ),
+            meta={
+                "group_id": group_id,
+                "group_name": group["name"],
+                "date": data.date,
+                "start_time": data.start_time,
+                "end_time": data.end_time,
+                "duration_minutes": duration_minutes,
+                "repeat_enabled": bool(data.repeat_enabled),
+                "repeat_frequency": data.repeat_frequency if data.repeat_enabled else None,
+                "repeat_until": repeat_until,
+                "lessons_created": lessons_created,
+            },
+        )
+    except Exception:
+        pass
+
+    return {"message": f"Создано {lessons_created} занятие(й) успешно"}
+
 @router.get("/reschedule-requests")
 async def get_reschedule_requests(user: dict = Depends(require_admin)):
     pool = await get_connection()
@@ -2422,7 +3079,7 @@ async def get_reschedule_requests(user: dict = Depends(require_admin)):
     return {"requests": formatted_requests}
 
 @router.post("/reschedule-requests/{request_id}/approve")
-async def approve_reschedule_request(request_id: int, user: dict = Depends(require_admin)):
+async def approve_reschedule_request(request_id: int, request: Request, user: dict = Depends(require_admin)):
     pool = await get_connection()
     request_details = await pool.fetchrow("""
         SELECT rr.id, rr.lesson_id, rr.new_date, rr.new_time, rr.new_start_time, rr.reason,
@@ -2484,10 +3141,21 @@ async def approve_reschedule_request(request_id: int, user: dict = Depends(requi
         related_type="lesson",
         action_url=f"/my-groups"
     )
+    await log_action(
+        actor=user,
+        action_key="admin.rescheduleRequests.approved",
+        action_label="Одобрение заявки на перенос занятия",
+        meta={
+            "request_id": request_id,
+            "lesson_id": request_details.get("lesson_id") if request_details else None,
+            "group_id": request_details.get("group_id") if request_details else None,
+        },
+        request=request,
+    )
     return {"message": "Reschedule request approved and lesson updated"}
 
 @router.post("/reschedule-requests/{request_id}/reject")
-async def reject_reschedule_request(request_id: int, user: dict = Depends(require_admin)):
+async def reject_reschedule_request(request_id: int, request: Request, user: dict = Depends(require_admin)):
     pool = await get_connection()
     request_details = await pool.fetchrow("""
         SELECT rr.id, rr.lesson_id, rr.requested_by_user_id, rr.teacher_id,
@@ -2525,6 +3193,17 @@ async def reject_reschedule_request(request_id: int, user: dict = Depends(requir
             related_type="reschedule_request",
             action_url=f"/teacher-groups/manage-group/{request_details['group_id']}"
         )
+    await log_action(
+        actor=user,
+        action_key="admin.rescheduleRequests.rejected",
+        action_label="Отклонение заявки на перенос занятия",
+        meta={
+            "request_id": request_id,
+            "lesson_id": request_details.get("lesson_id") if request_details else None,
+            "group_id": request_details.get("group_id") if request_details else None,
+        },
+        request=request,
+    )
     return {"message": "Reschedule request rejected"}
 
 @router.get("/lessons")
@@ -2564,7 +3243,7 @@ async def get_lessons(user: dict = Depends(require_admin)):
         ]
     }
 @router.post("/lessons")
-async def create_lesson(data: CreateLessonRequest, user: dict = Depends(require_admin)):
+async def create_lesson(data: CreateLessonRequest, request: Request, user: dict = Depends(require_admin)):
     pool = await get_connection()
     result = await pool.fetchrow(
         """
@@ -2574,6 +3253,13 @@ async def create_lesson(data: CreateLessonRequest, user: dict = Depends(require_
         """,
         data.group_id, data.class_name, data.teacher_id, data.hall_id,
         data.start_time, data.duration_minutes
+    )
+    await log_action(
+        actor=user,
+        action_key="admin.lessons.created",
+        action_label="Создание занятия",
+        meta={"lesson_id": result["id"], "group_id": data.group_id},
+        request=request,
     )
     return {"lesson_id": result["id"]}
 
@@ -2617,7 +3303,7 @@ async def update_lesson(lesson_id: int, data: UpdateLessonRequest, user: dict = 
     return {"message": "Lesson updated"}
 
 @router.delete("/lessons/{lesson_id}")
-async def delete_lesson(lesson_id: int, user: dict = Depends(require_admin_or_teacher)):
+async def delete_lesson(lesson_id: int, request: Request, user: dict = Depends(require_admin_or_teacher)):
     pool = await get_connection()
     from app.notifications import create_notification, NotificationType
     lesson = await pool.fetchrow(
@@ -2671,10 +3357,17 @@ async def delete_lesson(lesson_id: int, user: dict = Depends(require_admin_or_te
                 related_type="lesson",
                 student_id=student["id"]
             )
+    await log_action(
+        actor=user,
+        action_key="admin.lessons.deleted",
+        action_label="Удаление занятия",
+        meta={"lesson_id": lesson_id, "group_id": group_id},
+        request=request,
+    )
     return {"message": "Lesson deleted"}
 
 @router.post("/lessons/{lesson_id}/cancel")
-async def cancel_lesson(lesson_id: int, user: dict = Depends(require_admin)):
+async def cancel_lesson(lesson_id: int, request: Request, user: dict = Depends(require_admin)):
     pool = await get_connection()
     from app.notifications import create_notification, NotificationType
     lesson = await pool.fetchrow(
@@ -2730,12 +3423,20 @@ async def cancel_lesson(lesson_id: int, user: dict = Depends(require_admin)):
                 related_type="lesson",
                 student_id=student["id"]
             )
+    await log_action(
+        actor=user,
+        action_key="admin.lessons.cancelled",
+        action_label="Отмена занятия",
+        meta={"lesson_id": lesson_id, "group_id": lesson.get("group_id") if lesson else None},
+        request=request,
+    )
     return {"message": "Lesson cancelled"}
 
 @router.post("/lessons/{lesson_id}/reschedule")
 async def reschedule_lesson(
     lesson_id: int,
     data: RescheduleLessonRequest,
+    request: Request,
     user: dict = Depends(require_admin)
 ):
     pool = await get_connection()
@@ -2833,11 +3534,24 @@ async def reschedule_lesson(
                 related_type="lesson",
                 student_id=student["id"]
             )
+    await log_action(
+        actor=user,
+        action_key="admin.lessons.rescheduled",
+        action_label="Перенос занятия",
+        meta={
+            "lesson_id": lesson_id,
+            "group_id": lesson.get("group_id") if lesson else None,
+            "from": str(lesson.get("start_time")) if lesson else None,
+            "to": str(new_datetime) if new_datetime else None,
+        },
+        request=request,
+    )
     return {"message": "Lesson rescheduled"}
 @router.post("/lessons/{lesson_id}/substitute")
 async def set_substitute_teacher(
     lesson_id: int,
     data: SubstituteTeacherRequest,
+    request: Request,
     user: dict = Depends(require_admin)
 ):
     pool = await get_connection()
@@ -2908,6 +3622,13 @@ async def set_substitute_teacher(
                 related_type="lesson",
                 student_id=student["id"]
             )
+    await log_action(
+        actor=user,
+        action_key="admin.lessons.substituteAssigned",
+        action_label="Назначение замены преподавателя",
+        meta={"lesson_id": lesson_id, "substitute_teacher_id": data.substitute_teacher_id},
+        request=request,
+    )
     return {"message": "Substitute teacher assigned"}
 @router.post("/generate-lesson-instances")
 async def generate_lesson_instances(user: dict = Depends(require_admin)):
@@ -3132,8 +3853,10 @@ async def save_lesson_attendance(
 ):
     pool = await get_connection()
     lesson = await pool.fetchrow("""
-        SELECT id FROM lessons
-        WHERE id = $1 AND group_id = $2
+        SELECT l.id, l.start_time, g.name AS group_name
+        FROM lessons l
+        JOIN groups g ON g.id = l.group_id
+        WHERE l.id = $1 AND l.group_id = $2
     """, lesson_id, group_id)
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
@@ -3141,6 +3864,16 @@ async def save_lesson_attendance(
     for record in data.attendance:
         if record.status not in valid_statuses:
             raise HTTPException(status_code=400, detail=f"Invalid status: {record.status}")
+    before_rows = await pool.fetch(
+        """
+        SELECT student_id, status
+        FROM attendance_records
+        WHERE lesson_id = $1
+        """,
+        lesson_id,
+    )
+    before_by_student = {r["student_id"]: r["status"] for r in before_rows}
+
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute("""
@@ -3154,6 +3887,47 @@ async def save_lesson_attendance(
                     (lesson_id, group_id, student_id, status, attended, recorded_at)
                     VALUES ($1, $2, $3, $4, $5, NOW())
                 """, lesson_id, group_id, record.student_id, record.status, attended)
+
+    after_by_student = {r.student_id: r.status for r in data.attendance}
+    changed = 0
+    for student_id, new_status in after_by_student.items():
+        if before_by_student.get(student_id) != new_status:
+            changed += 1
+    deleted = 0
+    for student_id in before_by_student.keys():
+        if student_id not in after_by_student:
+            deleted += 1
+
+    try:
+        attended_count = sum(1 for s in after_by_student.values() if s in ['P', 'E'])
+        dt_label = lesson["start_time"].strftime("%Y-%m-%d %H:%M") if lesson["start_time"] else lesson["start_time"].date().isoformat()
+        action_label = (
+            f"Сохранение посещаемости занятия: группа: {lesson['group_name']}: {dt_label}: "
+            f"{len(after_by_student)} записей: {attended_count} присутствовали"
+        )
+
+        is_teacher_actor = (user or {}).get("role") == "teacher"
+        action_key = "teacher.groups.lessonAttendanceSaved" if is_teacher_actor else "admin.groups.lessonAttendanceSaved"
+        await log_action(
+            actor=user,
+            action_key=action_key,
+            action_label=action_label,
+            meta={
+                "group_id": group_id,
+                "group_name": lesson["group_name"],
+                "lesson_id": lesson_id,
+                "lesson_start_time": lesson["start_time"].isoformat() if lesson["start_time"] else None,
+                "records_count": len(after_by_student),
+                "attended_count": attended_count,
+                "changed_records_count": changed,
+                "deleted_records_count": deleted,
+                "before": {
+                    "records_count": len(before_by_student),
+                },
+            },
+        )
+    except Exception:
+        pass
     return {"message": "Attendance saved successfully"}
 @router.get("/groups/{group_id}/lessons/{lesson_id}/attendance")
 async def get_lesson_attendance(
@@ -3545,7 +4319,21 @@ async def get_user_by_id(user_id: int, user: dict = Depends(require_admin)):
 @router.put("/users/{user_id}")
 async def update_user(user_id: int, data: UpdateUserRequest, user: dict = Depends(require_admin)):
     pool = await get_connection()
-    existing = await pool.fetchrow("SELECT id, role FROM users WHERE id = $1", user_id)
+    before = await pool.fetchrow(
+        """
+        SELECT
+            u.id,
+            u.name,
+            u.email,
+            u.role,
+            s.phone_number
+        FROM users u
+        LEFT JOIN students s ON s.user_id = u.id
+        WHERE u.id = $1
+        """,
+        user_id,
+    )
+    existing = before
     if not existing:
         raise HTTPException(status_code=404, detail="User not found")
     if data.email:
@@ -3607,14 +4395,123 @@ async def update_user(user_id: int, data: UpdateUserRequest, user: dict = Depend
                 """,
                 user_id, data.phone
             )
+
+    try:
+        before_name = before["name"] if before else None
+        before_email = before["email"] if before else None
+        before_role = before["role"] if before else None
+        before_phone = before["phone_number"] if before else None
+
+        after_name = data.name if data.name is not None else before_name
+        after_email = data.email if data.email is not None else before_email
+        after_role = data.role if data.role is not None else before_role
+        after_phone = data.phone if data.phone is not None else before_phone
+
+        changes = {}
+        if data.name is not None and data.name != before_name:
+            changes["name"] = {"from": before_name, "to": data.name}
+        if data.email is not None and data.email != before_email:
+            changes["email"] = {"from": before_email, "to": data.email}
+        if data.role is not None and data.role != before_role:
+            changes["role"] = {"from": before_role, "to": data.role}
+        if data.phone is not None and data.phone != before_phone:
+            changes["phone"] = {"from": before_phone, "to": data.phone}
+
+        if changes:
+            display_name = after_name or before_name or str(user_id)
+            display_email = after_email or before_email
+            display_identity = f"{display_name}{(' <' + display_email + '>') if display_email else ''}"
+
+            def _fmt(v):
+                if v is None:
+                    return "—"
+                s = str(v).strip()
+                return s if s else "—"
+
+            def _shorten(s: str, max_len: int = 48) -> str:
+                if len(s) <= max_len:
+                    return s
+                return s[: max_len - 1] + "…"
+
+            def _fmt_change(label: str, from_v, to_v) -> str:
+                from_s = _shorten(_fmt(from_v))
+                to_s = _shorten(_fmt(to_v))
+                return f"{label}: {from_s} → {to_s}"
+
+            field_labels = {
+                "name": "Имя",
+                "email": "Почта",
+                "phone": "Телефон",
+                "role": "Роль",
+            }
+            ordered_keys = ["name", "email", "phone", "role"]
+            details_parts = []
+            for k in ordered_keys:
+                if k not in changes:
+                    continue
+                c = changes.get(k) or {}
+                details_parts.append(_fmt_change(field_labels.get(k, k), c.get("from"), c.get("to")))
+            details = "; ".join(details_parts)
+
+            await log_action(
+                actor=user,
+                action_key="admin.users.updated",
+                action_label=f"Изменение пользователя: {display_identity}" + (f": {details}" if details else ""),
+                meta={
+                    "user_id": user_id,
+                    "before": {
+                        "name": before_name,
+                        "email": before_email,
+                        "role": before_role,
+                        "phone": before_phone,
+                    },
+                    "after": {
+                        "name": after_name,
+                        "email": after_email,
+                        "role": after_role,
+                        "phone": after_phone,
+                    },
+                    "changes": changes,
+                },
+            )
+    except Exception:
+        pass
     return {"message": "User updated successfully"}
+
 @router.delete("/users/{user_id}")
-async def delete_user(user_id: int, user: dict = Depends(require_admin)):
+async def delete_user(user_id: int, request: Request, user: dict = Depends(require_admin)):
     if user_id == user["id"]:
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
     pool = await get_connection()
-    existing = await pool.fetchrow("SELECT id, role FROM users WHERE id = $1", user_id)
+    existing = await pool.fetchrow(
+        """
+        SELECT u.id, u.name, u.email, u.role, s.phone_number
+        FROM users u
+        LEFT JOIN students s ON s.user_id = u.id
+        WHERE u.id = $1
+        """,
+        user_id,
+    )
     if not existing:
         raise HTTPException(status_code=404, detail="User not found")
     await pool.execute("DELETE FROM users WHERE id = $1", user_id)
+
+    deleted_name = existing["name"]
+    deleted_email = existing["email"]
+    deleted_role = existing["role"]
+    deleted_phone = existing["phone_number"]
+    deleted_identity = f"{deleted_name or user_id}{(' <' + deleted_email + '>') if deleted_email else ''}"
+    await log_action(
+        actor=user,
+        action_key="admin.users.deleted",
+        action_label=f"Удаление пользователя: {deleted_identity}" + (f": роль: {deleted_role}" if deleted_role else ""),
+        meta={
+            "user_id": user_id,
+            "name": deleted_name,
+            "email": deleted_email,
+            "role": deleted_role,
+            "phone": deleted_phone,
+        },
+        request=request,
+    )
     return {"message": "User deleted successfully"}

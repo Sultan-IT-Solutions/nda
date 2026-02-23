@@ -7,6 +7,7 @@ import os
 class Settings(BaseSettings):
     ENV: str = "development"
     JWT_SECRET: str
+    ACCESS_TOKEN_MINUTES: int = 10
     REFRESH_TOKEN_DAYS: int = 30
 
     DATABASE_URL: str | None = None

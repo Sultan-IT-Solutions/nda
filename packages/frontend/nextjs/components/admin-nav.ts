@@ -8,6 +8,7 @@ import {
   MapPin,
   Gear,
   UserCircle,
+  Notebook,
 } from "@phosphor-icons/react"
 
 export type AdminNavItem = {
@@ -31,4 +32,5 @@ export const adminNavItems: AdminNavItem[] = [
   { label: "Залы", icon: MapPin, path: "/halls" },
   { label: "Заявки", icon: Clock, path: "/analytics/applications" },
   { label: "Системные настройки", icon: Gear, path: "/analytics/settings" },
+  { label: "Логи", icon: Notebook, path: "/analytics/logs" },
 ]

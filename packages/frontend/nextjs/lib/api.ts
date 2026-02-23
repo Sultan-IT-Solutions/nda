@@ -540,6 +540,8 @@ export const API = {
         method: 'POST',
         body: JSON.stringify(scheduleData),
       }),
+    deleteGroupSchedule: (groupId: number, dayOfWeek: number) =>
+      apiRequest(`/admin/groups/${groupId}/schedule/${dayOfWeek}`, { method: 'DELETE' }),
     createGroupLessons: (groupId: number, lessonData: any) =>
       apiRequest(`/admin/groups/${groupId}/lessons`, {
         method: 'POST',
@@ -575,6 +577,37 @@ export const API = {
       apiRequest('/admin/settings', {
         method: 'PATCH',
         body: JSON.stringify(data),
+      }),
+
+    getAuditLogs: (params?: {
+      limit?: number
+      offset?: number
+      actor?: string
+      role?: string
+      action?: string
+      from?: string
+      to?: string
+    }) => {
+      const qs = new URLSearchParams()
+      if (params?.limit) qs.set('limit', String(params.limit))
+      if (params?.offset) qs.set('offset', String(params.offset))
+      if (params?.actor) qs.set('actor', params.actor)
+      if (params?.role) qs.set('role', params.role)
+      if (params?.action) qs.set('action', params.action)
+      if (params?.from) qs.set('from', params.from)
+      if (params?.to) qs.set('to', params.to)
+      const s = qs.toString()
+      return apiRequest(`/admin/audit-logs${s ? `?${s}` : ''}`)
+    },
+
+    logAuditEvent: (payload: {
+      action_key: string
+      action_label: string
+      meta?: Record<string, any>
+    }) =>
+      apiRequest('/admin/audit-log', {
+        method: 'POST',
+        body: JSON.stringify(payload),
       }),
   },
 
