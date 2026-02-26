@@ -70,6 +70,19 @@ interface Student {
   trial_selected_lesson_start_time?: string | null
 }
 
+interface ClassSubject {
+  id: number
+  subject_id: number
+  subject_name: string
+  subject_color?: string | null
+  is_elective: boolean
+  hall_id?: number | null
+  hall_name?: string | null
+  teacher_ids: number[]
+  teacher_names: string[]
+  student_ids: number[]
+}
+
 interface Hall {
   id: number
   name: string
@@ -99,7 +112,20 @@ export default function GroupDetailPage() {
   const [allHalls, setAllHalls] = useState<Hall[]>([])
   const [allTeachers, setAllTeachers] = useState<Teacher[]>([])
   const [allCategories, setAllCategories] = useState<any[]>([])
+  const [allSubjects, setAllSubjects] = useState<any[]>([])
   const [availableStudents, setAvailableStudents] = useState<AvailableStudent[]>([])
+  const [classSubjects, setClassSubjects] = useState<ClassSubject[]>([])
+
+  const [subjectDialogOpen, setSubjectDialogOpen] = useState(false)
+  const [editingSubject, setEditingSubject] = useState<ClassSubject | null>(null)
+  const [subjectForm, setSubjectForm] = useState({
+    subject_id: "",
+    is_elective: false,
+    hall_id: "",
+    teacher_ids: [] as number[],
+    student_ids: [] as number[],
+  })
+  const [isSavingSubject, setIsSavingSubject] = useState(false)
 
   const [isEditing, setIsEditing] = useState(false)
   const [editForm, setEditForm] = useState({
@@ -144,7 +170,9 @@ export default function GroupDetailPage() {
         fetchHalls()
         fetchTeachers()
         fetchCategories()
+        fetchSubjects()
         fetchAvailableStudents()
+        fetchClassSubjects()
       } catch (err) {
         const message = handleApiError(err)
         if (message === AUTH_REQUIRED_MESSAGE) {
@@ -206,7 +234,7 @@ export default function GroupDetailPage() {
       setLoading(false)
     } catch (err) {
       console.error("Error fetching group details:", err)
-      toast.error("Ошибка при загрузке данных группы")
+      toast.error("Ошибка при загрузке данных класса")
       setLoading(false)
     }
   }
@@ -248,12 +276,130 @@ export default function GroupDetailPage() {
     }
   }
 
+  const fetchSubjects = async () => {
+    try {
+      const response = await API.subjects.getAll()
+      setAllSubjects(response || [])
+    } catch (err) {
+      console.error("Error fetching subjects:", err)
+    }
+  }
+
   const fetchAvailableStudents = async () => {
     try {
       const response = await API.admin.getStudents()
       setAvailableStudents(response.students || [])
     } catch (err) {
       console.error("Error fetching students:", err)
+    }
+  }
+
+  const fetchClassSubjects = async () => {
+    try {
+      const response = await API.admin.getClassSubjects(groupId)
+      setClassSubjects(response.subjects || [])
+    } catch (err) {
+      console.error("Error fetching class subjects:", err)
+    }
+  }
+
+  const resetSubjectForm = () => {
+    setEditingSubject(null)
+    setSubjectForm({
+      subject_id: "",
+      is_elective: false,
+      hall_id: "",
+      teacher_ids: [],
+      student_ids: [],
+    })
+  }
+
+  const openCreateSubject = () => {
+    resetSubjectForm()
+    setSubjectDialogOpen(true)
+  }
+
+  const openEditSubject = (subject: ClassSubject) => {
+    setEditingSubject(subject)
+    setSubjectForm({
+      subject_id: subject.subject_id.toString(),
+      is_elective: subject.is_elective,
+      hall_id: subject.hall_id ? subject.hall_id.toString() : "",
+      teacher_ids: subject.teacher_ids || [],
+      student_ids: subject.student_ids || [],
+    })
+    setSubjectDialogOpen(true)
+  }
+
+  const toggleSubjectTeacher = (teacherId: number) => {
+    setSubjectForm((prev) => {
+      const exists = prev.teacher_ids.includes(teacherId)
+      return {
+        ...prev,
+        teacher_ids: exists ? prev.teacher_ids.filter((id) => id !== teacherId) : [...prev.teacher_ids, teacherId],
+      }
+    })
+  }
+
+  const toggleSubjectStudent = (studentId: number) => {
+    setSubjectForm((prev) => {
+      const exists = prev.student_ids.includes(studentId)
+      return {
+        ...prev,
+        student_ids: exists ? prev.student_ids.filter((id) => id !== studentId) : [...prev.student_ids, studentId],
+      }
+    })
+  }
+
+  const saveSubject = async () => {
+    if (isSavingSubject) return
+    if (!subjectForm.subject_id) {
+      toast.error("Выберите предмет")
+      return
+    }
+    setIsSavingSubject(true)
+    try {
+      const payload = {
+        subject_id: parseInt(subjectForm.subject_id, 10),
+        is_elective: subjectForm.is_elective,
+        hall_id: subjectForm.hall_id ? parseInt(subjectForm.hall_id, 10) : null,
+        teacher_ids: subjectForm.teacher_ids,
+        student_ids: subjectForm.is_elective ? subjectForm.student_ids : [],
+      }
+      if (editingSubject) {
+        await API.admin.updateClassSubject(groupId, editingSubject.id, payload)
+        toast.success("Предмет обновлен")
+      } else {
+        await API.admin.addClassSubject(groupId, payload)
+        toast.success("Предмет добавлен")
+      }
+      setSubjectDialogOpen(false)
+      resetSubjectForm()
+      fetchClassSubjects()
+    } catch (err) {
+      const message = handleApiError(err)
+      if (message === "Предмет уже привязан к этому классу") {
+        toast.success("Предмет уже привязан к этому классу")
+        setSubjectDialogOpen(false)
+        resetSubjectForm()
+        fetchClassSubjects()
+      } else {
+        console.error("Error saving class subject:", err)
+        toast.error(message)
+      }
+    } finally {
+      setIsSavingSubject(false)
+    }
+  }
+
+  const deleteSubject = async (classSubjectId: number) => {
+    try {
+      await API.admin.deleteClassSubject(groupId, classSubjectId)
+      toast.success("Предмет удален")
+      fetchClassSubjects()
+    } catch (err) {
+      console.error("Error deleting class subject:", err)
+      toast.error(handleApiError(err))
     }
   }
 
@@ -313,7 +459,7 @@ export default function GroupDetailPage() {
       fetchGroupDetails()
     } catch (err) {
       console.error("Error toggling group status:", err)
-      toast.error("Ошибка при изменении статуса группы")
+      toast.error("Ошибка при изменении статуса класса")
     }
   }
 
@@ -324,7 +470,7 @@ export default function GroupDetailPage() {
       router.push("/groups")
     } catch (err: any) {
       console.error("Error deleting group:", err)
-      const errorMessage = err.response?.data?.detail || err.message || "Ошибка при удалении группы"
+      const errorMessage = err.response?.data?.detail || err.message || "Ошибка при удалении класса"
       toast.error(errorMessage)
     }
   }
@@ -332,7 +478,7 @@ export default function GroupDetailPage() {
   const handleRemoveStudent = async (studentId: number) => {
     try {
       await API.admin.removeStudentFromGroup(groupId, studentId)
-      toast.success("Студент удален из группы")
+      toast.success("Студент удален из класса")
       fetchGroupDetails()
     } catch (err) {
       console.error("Error removing student:", err)
@@ -355,7 +501,7 @@ export default function GroupDetailPage() {
   const handleRemoveTeacher = async (teacherId: number) => {
     try {
       await API.admin.removeTeacherFromGroup(groupId, teacherId)
-      toast.success("Преподаватель удален из группы")
+      toast.success("Преподаватель удален из класса")
       fetchGroupDetails()
     } catch (err) {
       console.error("Error removing teacher:", err)
@@ -401,7 +547,7 @@ export default function GroupDetailPage() {
 
       if (selectedDate < startDate || selectedDate > endDate) {
         const formatDate = (date: string) => new Date(date).toLocaleDateString('ru-RU')
-        toast.error(`Выбранная дата должна быть в пределах периода активности группы (${formatDate(group.start_date)} - ${formatDate(group.end_date)})`)
+        toast.error(`Выбранная дата должна быть в пределах периода активности класса (${formatDate(group.start_date)} - ${formatDate(group.end_date)})`)
         return
       }
     }
@@ -417,7 +563,7 @@ export default function GroupDetailPage() {
 
       if (group?.end_date && repeatUntilDate > new Date(group.end_date)) {
         const formatDate = (date: string) => new Date(date).toLocaleDateString('ru-RU')
-        toast.error(`Дата окончания повтора не может быть позже окончания активности группы (${formatDate(group.end_date)})`)
+        toast.error(`Дата окончания повтора не может быть позже окончания активности класса (${formatDate(group.end_date)})`)
         return
       }
     }
@@ -497,7 +643,7 @@ export default function GroupDetailPage() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-500">Загрузка данных группы...</p>
+          <p className="text-gray-500">Загрузка данных класса...</p>
         </div>
       </div>
     )
@@ -558,7 +704,7 @@ export default function GroupDetailPage() {
                 className="text-gray-600 hover:text-gray-900"
               >
                 <ArrowLeft className="w-5 h-5 mr-2" />
-                Назад к группам
+                Назад к классам
               </Button>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">{group.name}</h1>
@@ -616,18 +762,18 @@ export default function GroupDetailPage() {
                         ) : (
                           <LockOpen className="w-4 h-4 mr-2" />
                         )}
-                        {group.isActive ? "Закрыть группу" : "Открыть группу"}
+                        {group.isActive ? "Закрыть класс" : "Открыть класс"}
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
                         <AlertDialogTitle>
-                          {group.isActive ? "Закрыть группу?" : "Открыть группу?"}
+                          {group.isActive ? "Закрыть класс?" : "Открыть класс?"}
                         </AlertDialogTitle>
                         <AlertDialogDescription>
                           {group.isActive
-                            ? `Вы уверены, что хотите закрыть группу "${group.name}"? Новые студенты больше не смогут присоединиться в эту группу.`
-                            : `Вы уверены, что хотите открыть группу "${group.name}"? Группа снова станет активной.`
+                            ? `Вы уверены, что хотите закрыть класс "${group.name}"? Новые студенты больше не смогут присоединиться в этот класс.`
+                            : `Вы уверены, что хотите открыть класс "${group.name}"? Класс снова станет активным.`
                           }
                         </AlertDialogDescription>
                       </AlertDialogHeader>
@@ -648,14 +794,14 @@ export default function GroupDetailPage() {
                         className="w-full sm:w-auto col-span-2 sm:col-span-1"
                       >
                         <Trash className="w-4 h-4 mr-2" />
-                        Удалить группу
+                        Удалить класс
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>Удалить группу?</AlertDialogTitle>
+                        <AlertDialogTitle>Удалить класс?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          Вы уверены, что хотите удалить группу "{group.name}"? Это действие необратимо и приведет к удалению всех данных группы, включая студентов и расписание.
+                          Вы уверены, что хотите удалить класс "{group.name}"? Это действие необратимо и приведет к удалению всех данных класса, включая студентов и расписание.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
@@ -683,7 +829,7 @@ export default function GroupDetailPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Users className="w-5 h-5" />
-                  Информация о группе
+                  Информация о классе
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1025,9 +1171,159 @@ export default function GroupDetailPage() {
                 </CardContent>
               )}
             </Card>
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span>Предметы класса</span>
+                  <Button variant="outline" size="sm" onClick={openCreateSubject}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Добавить
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xs text-gray-500 mb-3">
+                  Обычные предметы видны всем ученикам класса. Для элективных предметов можно выбрать отдельных учеников.
+                </p>
+                {classSubjects.length === 0 ? (
+                  <p className="text-sm text-gray-500">Пока нет привязанных предметов.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {classSubjects.map((subject) => (
+                      <div key={subject.id} className="rounded-lg border border-gray-200 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-gray-900">{subject.subject_name}</span>
+                              {subject.is_elective && <Badge variant="secondary">Электив</Badge>}
+                            </div>
+                            <div className="mt-2 space-y-1 text-sm text-gray-600">
+                              <div>Учитель: {subject.teacher_names.length > 0 ? subject.teacher_names.join(", ") : "Не назначен"}</div>
+                              <div>Зал: {subject.hall_name || "Не назначен"}</div>
+                              {subject.is_elective && <div>Учеников: {subject.student_ids.length}</div>}
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button variant="outline" size="sm" onClick={() => openEditSubject(subject)}>
+                              <PencilSimple className="w-4 h-4" />
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={() => deleteSubject(subject.id)}>
+                              <Trash className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Dialog open={subjectDialogOpen} onOpenChange={setSubjectDialogOpen}>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>{editingSubject ? "Редактировать предмет" : "Добавить предмет"}</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label>Предмет</Label>
+                    <Select
+                      value={subjectForm.subject_id}
+                      onValueChange={(value) => setSubjectForm((prev) => ({ ...prev, subject_id: value }))}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="Выберите предмет" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allSubjects.map((subject) => (
+                          <SelectItem key={subject.id} value={subject.id.toString()}>
+                            {subject.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={subjectForm.is_elective}
+                      onChange={(e) => setSubjectForm((prev) => ({ ...prev, is_elective: e.target.checked }))}
+                      className="rounded border-gray-300"
+                    />
+                    <Label className="text-sm font-medium">Элективный предмет</Label>
+                  </div>
+
+                  <div>
+                    <Label>Зал</Label>
+                    <Select
+                      value={subjectForm.hall_id || "none"}
+                      onValueChange={(value) =>
+                        setSubjectForm((prev) => ({ ...prev, hall_id: value === "none" ? "" : value }))
+                      }
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="Выберите зал" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Не назначен</SelectItem>
+                        {allHalls.map((hall) => (
+                          <SelectItem key={hall.id} value={hall.id.toString()}>
+                            {hall.name} (до {hall.capacity} чел.)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label>Учителя</Label>
+                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {allTeachers.map((teacher) => (
+                        <label key={teacher.id} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={subjectForm.teacher_ids.includes(teacher.id)}
+                            onChange={() => toggleSubjectTeacher(teacher.id)}
+                            className="rounded border-gray-300"
+                          />
+                          {teacher.name}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {subjectForm.is_elective && (
+                    <div>
+                      <Label>Ученики (для электива)</Label>
+                      <div className="mt-2 max-h-48 space-y-2 overflow-y-auto rounded-lg border border-gray-200 p-2">
+                        {group.students.map((student) => (
+                          <label key={student.id} className="flex items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={subjectForm.student_ids.includes(student.id)}
+                              onChange={() => toggleSubjectStudent(student.id)}
+                              className="rounded border-gray-300"
+                            />
+                            {student.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="mt-6 flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setSubjectDialogOpen(false)}>
+                    Отмена
+                  </Button>
+                  <Button onClick={saveSubject} disabled={isSavingSubject}>
+                    {isSavingSubject ? "Сохранение..." : "Сохранить"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
 
-    
           <div className="lg:col-span-2">
             <Card>
               <CardHeader>
@@ -1041,7 +1337,7 @@ export default function GroupDetailPage() {
               </CardHeader>
               <CardContent>
                 {group.students.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">Нет студентов в группе</p>
+                  <p className="text-center text-gray-500 py-8">Нет студентов в классе</p>
                 ) : (
                   <Table>
                     <TableHeader>
@@ -1103,7 +1399,7 @@ export default function GroupDetailPage() {
                                 <AlertDialogHeader>
                                   <AlertDialogTitle>Удалить студента?</AlertDialogTitle>
                                   <AlertDialogDescription>
-                                    Вы уверены, что хотите удалить {student.name} из группы?
+                                    Вы уверены, что хотите удалить {student.name} из класса?
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
@@ -1232,7 +1528,7 @@ export default function GroupDetailPage() {
           <div className="space-y-4">
             {group?.start_date && group?.end_date && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <div className="text-sm font-medium text-blue-900 mb-1">Период активности группы:</div>
+                <div className="text-sm font-medium text-blue-900 mb-1">Период активности класса:</div>
                 <div className="text-sm text-blue-700">
                   {new Date(group.start_date).toLocaleDateString('ru-RU')} - {new Date(group.end_date).toLocaleDateString('ru-RU')}
                 </div>

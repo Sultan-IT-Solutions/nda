@@ -320,7 +320,7 @@ export default function SchedulePage() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <p className="text-destructive mb-2">Ошибка: {error}</p>
-          <p className="text-sm text-muted-foreground">Убедитесь, что вы авторизованы и сервер запущен.</p>
+          <p className="text-sm text-muted-foreground">Убедитесь, что вы авторизованы.</p>
         </div>
       </div>
     )

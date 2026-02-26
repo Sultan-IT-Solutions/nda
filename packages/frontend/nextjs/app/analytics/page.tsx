@@ -229,7 +229,7 @@ export default function AnalyticsPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Users className="w-5 h-5 text-cyan-600" />
-                  Группы
+                  Классы
                 </CardTitle>
               </CardHeader>
               <CardContent>

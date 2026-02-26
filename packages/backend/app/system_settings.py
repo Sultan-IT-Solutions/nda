@@ -10,6 +10,13 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "trial_lessons.enabled": True,
     "grades.scale": "0-5",
     "grades.teacher_edit_enabled": True,
+    "school.electives.enabled": True,
+    "school.class.require_teacher": False,
+    "school.class.require_hall": False,
+    "school.class.allow_multi_teachers": True,
+    "transcript.enabled": True,
+    "transcript.require_complete": True,
+    "transcript.exclude_cancelled": True,
 }
 
 PUBLIC_SETTINGS_KEYS = tuple(DEFAULT_SETTINGS.keys())

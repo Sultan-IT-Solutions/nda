@@ -243,7 +243,7 @@ export default function CategoriesPage() {
           <div className="flex items-center justify-between mb-8">
             <div>
               <h2 className="text-3xl font-bold text-gray-900">Категории</h2>
-              <p className="text-gray-600 mt-1">Создавайте и редактируйте категории для групп</p>
+              <p className="text-gray-600 mt-1">Создавайте и редактируйте категории для классов</p>
             </div>
             <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
               <DialogTrigger asChild>
@@ -311,7 +311,7 @@ export default function CategoriesPage() {
                 <Card className="p-12 text-center border-2 border-dashed border-gray-300">
                   <Tag size={48} className="mx-auto mb-4 text-gray-400" />
                   <h3 className="text-lg font-semibold mb-2 text-gray-900">Нет категорий</h3>
-                  <p className="text-gray-500 mb-4">Создайте первую категорию для организации групп</p>
+                  <p className="text-gray-500 mb-4">Создайте первую категорию для организации классов</p>
                   <Button onClick={openCreateModal} variant="outline" className="border-purple-200 text-purple-600 hover:bg-purple-50">
                     <Plus size={16} className="mr-2" />
                     Создать категорию

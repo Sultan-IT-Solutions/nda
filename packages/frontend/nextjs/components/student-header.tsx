@@ -40,7 +40,8 @@ type StudentHeaderProps = {
 const navItems = [
   { label: "Главная", path: "/" },
   { label: "Расписание групп", path: "/schedule" },
-  { label: "Мои группы", path: "/my-groups" },
+  { label: "Мои классы", path: "/my-groups" },
+  { label: "Транскрипт", path: "/transcript" },
   { label: "Пробный урок", path: "/trial" },
   { label: "Профиль", path: "/profile" },
 ]

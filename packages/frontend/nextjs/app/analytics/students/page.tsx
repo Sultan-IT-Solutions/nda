@@ -87,7 +87,7 @@ export default function StudentsAnalyticsPage() {
       }
 
       await API.admin.removeStudentFromGroup(group.groupId, studentId);
-      toast.success(`Студент успешно удален из группы ${groupName}`);
+  toast.success(`Студент успешно удален из класса ${groupName}`);
 
       setStudents(prev => prev.map(s => {
         if (s.id === studentId) {
@@ -103,7 +103,7 @@ export default function StudentsAnalyticsPage() {
 
     } catch (error) {
       console.error("Failed to remove student from group:", error);
-      toast.error("Ошибка при удалении студента из группы");
+  toast.error("Ошибка при удалении студента из класса");
     }
   };
 
@@ -344,9 +344,9 @@ export default function StudentsAnalyticsPage() {
                                     </AlertDialogTrigger>
                                     <AlertDialogContent>
                                       <AlertDialogHeader>
-                                        <AlertDialogTitle>Удалить студента из группы?</AlertDialogTitle>
+                                        <AlertDialogTitle>Удалить студента из класса?</AlertDialogTitle>
                                         <AlertDialogDescription>
-                                          Вы уверены, что хотите удалить студента <strong>{student.name}</strong> из группы <strong>{group.groupName}</strong>? Это действие нельзя отменить.
+                                          Вы уверены, что хотите удалить студента <strong>{student.name}</strong> из класса <strong>{group.groupName}</strong>? Это действие нельзя отменить.
                                         </AlertDialogDescription>
                                       </AlertDialogHeader>
                                       <AlertDialogFooter>
@@ -366,7 +366,7 @@ export default function StudentsAnalyticsPage() {
                           ))}
                         </div>
                       ) : (
-                        <p className="text-sm text-gray-500 mb-4">Не записан в группы</p>
+                        <p className="text-sm text-gray-500 mb-4">Не записан в классы</p>
                       )}
 
                       {/* Additional Info */}

@@ -136,7 +136,7 @@ export default function MyGroupsPage() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <p className="text-destructive mb-2">Ошибка: {error}</p>
-          <p className="text-sm text-muted-foreground">Убедитесь, что вы авторизованы и сервер запущен.</p>
+          <p className="text-sm text-muted-foreground">Убедитесь, что вы авторизованы.</p>
         </div>
       </div>
     )
@@ -148,8 +148,8 @@ export default function MyGroupsPage() {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="mb-8">
-          <h1 data-tour="my-groups-title" className="text-3xl font-bold text-foreground mb-2">Ваши группы</h1>
-          <p className="text-sm text-muted-foreground">Найдено {enrolledGroups.length} группы</p>
+          <h1 data-tour="my-groups-title" className="text-3xl font-bold text-foreground mb-2">Ваши классы</h1>
+          <p className="text-sm text-muted-foreground">Найдено {enrolledGroups.length} классов</p>
         </div>
 
         <div data-tour="my-groups-list" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

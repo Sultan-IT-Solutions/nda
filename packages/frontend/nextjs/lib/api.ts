@@ -360,6 +360,7 @@ export const API = {
     getById: (id: number) => apiRequest(`/teachers/${id}`),
     getGroups: (teacherId: number) => apiRequest(`/admin/teachers/${teacherId}/groups`),
     getMyGroups: () => apiRequest('/teachers/groups'),
+    getMySubjects: () => apiRequest('/teachers/my-subjects'),
     getScheduledLessons: () => apiRequest('/teachers/scheduled-lessons'),
     getWeeklySchedule: (weekStart: string) => apiRequest(`/teachers/schedule/weekly?week_start=${weekStart}`),
     getHallsOccupancyWeekly: (weekStart: string) => apiRequest(`/teachers/halls/occupancy/weekly?week_start=${weekStart}`),
@@ -573,10 +574,57 @@ export const API = {
       trial_lessons_enabled?: boolean
       grades_scale?: '0-5' | '0-100'
       teacher_edit_enabled?: boolean
+      electives_enabled?: boolean
+      class_require_teacher?: boolean
+      class_require_hall?: boolean
+      class_allow_multi_teachers?: boolean
+      transcript_enabled?: boolean
+      transcript_require_complete?: boolean
+      transcript_exclude_cancelled?: boolean
     }) =>
       apiRequest('/admin/settings', {
         method: 'PATCH',
         body: JSON.stringify(data),
+      }),
+
+    getClassSubjects: (groupId: number) => apiRequest(`/admin/groups/${groupId}/subjects`),
+    addClassSubject: (groupId: number, data: {
+      subject_id: number
+      is_elective?: boolean
+      hall_id?: number | null
+      teacher_ids?: number[]
+      student_ids?: number[]
+    }) =>
+      apiRequest(`/admin/groups/${groupId}/subjects`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    updateClassSubject: (groupId: number, classSubjectId: number, data: {
+      subject_id?: number
+      is_elective?: boolean
+      hall_id?: number | null
+      teacher_ids?: number[]
+      student_ids?: number[]
+    }) =>
+      apiRequest(`/admin/groups/${groupId}/subjects/${classSubjectId}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    deleteClassSubject: (groupId: number, classSubjectId: number) =>
+      apiRequest(`/admin/groups/${groupId}/subjects/${classSubjectId}`, { method: 'DELETE' }),
+
+    getTranscriptGroup: (groupId: number, subjectId?: number) => {
+      const qs = subjectId ? `?subject_id=${subjectId}` : ''
+      return apiRequest(`/admin/transcript/group/${groupId}${qs}`)
+    },
+    publishTranscript: (groupId: number, data: { subject_id?: number }) =>
+      apiRequest(`/admin/transcript/group/${groupId}/publish`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    publishTranscriptAll: (groupId: number) =>
+      apiRequest(`/admin/transcript/group/${groupId}/publish-all`, {
+        method: 'POST',
       }),
 
     getAuditLogs: (params?: {
@@ -627,6 +675,22 @@ export const API = {
       apiRequest(`/categories/${id}`, { method: 'DELETE' }),
   },
 
+  subjects: {
+    getAll: () => apiRequest('/subjects/'),
+    create: (data: { name: string; description: string | null; color?: string }) =>
+      apiRequest('/subjects/', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    update: (id: number, data: { name?: string; description?: string | null; color?: string }) =>
+      apiRequest(`/subjects/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    delete: (id: number) =>
+      apiRequest(`/subjects/${id}`, { method: 'DELETE' }),
+  },
+
   notifications: {
     getAll: (limit?: number, unreadOnly?: boolean) => {
       const params = new URLSearchParams();
@@ -642,6 +706,10 @@ export const API = {
       apiRequest('/notifications/read-all', { method: 'POST' }),
     delete: (notificationId: number) =>
       apiRequest(`/notifications/${notificationId}`, { method: 'DELETE' }),
+  },
+
+  transcript: {
+    getMy: () => apiRequest('/transcript/me'),
   },
 
   get: (endpoint: string) => apiRequest(endpoint),

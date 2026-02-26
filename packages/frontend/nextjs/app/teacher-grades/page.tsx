@@ -708,7 +708,7 @@ export default function TeacherGradesPage() {
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
                             <div className="text-lg font-semibold">{selectedGroup.name}</div>
-                            <div className="text-sm text-muted-foreground">Журнал выбранной группы</div>
+                            <div className="text-sm text-muted-foreground">Журнал выбранного класса</div>
                           </div>
                           <span
                             className={
@@ -756,7 +756,7 @@ export default function TeacherGradesPage() {
               </Card>
             ) : lessons.length === 0 ? (
               <Card>
-                <CardContent className="py-10 text-muted-foreground">Нет уроков для этой группы</CardContent>
+                <CardContent className="py-10 text-muted-foreground">Нет уроков для этого класса</CardContent>
               </Card>
             ) : (
               <>
@@ -1148,7 +1148,7 @@ export default function TeacherGradesPage() {
           <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6">
             <Card className="h-fit">
               <CardHeader>
-                <CardTitle>Мои группы</CardTitle>
+                <CardTitle>Мои классы</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <Input value={groupQuery} onChange={(e) => setGroupQuery(e.target.value)} placeholder="Поиск по названию" />
@@ -1224,7 +1224,7 @@ export default function TeacherGradesPage() {
                   </Card>
                 ) : !selectedLesson ? (
                   <Card>
-                    <CardContent className="py-10 text-muted-foreground">Нет уроков для этой группы</CardContent>
+                    <CardContent className="py-10 text-muted-foreground">Нет уроков для этого класса</CardContent>
                   </Card>
                 ) : (
                   <div className="space-y-3">

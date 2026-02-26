@@ -43,7 +43,7 @@ export default function Home() {
             {userRole === 'teacher' && (
               <Link href="/teacher-groups">
                 <Button className="w-full bg-blue-600 hover:bg-blue-700">
-                  Мои группы
+                  Мои предметы
                 </Button>
               </Link>
             )}

@@ -116,7 +116,7 @@ export default function TeacherGroupsPage() {
       date = now.toISOString().split('T')[0];
       time = '09:00';
 
-      alert('Внимание: У группы не указано расписание. Используется время по умолчанию: сегодня в 09:00. Вы можете изменить его в форме переноса.');
+  alert('Внимание: У класса не указано расписание. Используется время по умолчанию: сегодня в 09:00. Вы можете изменить его в форме переноса.');
     } else {
       date = formatDateForInput(group.start_time);
       time = formatTimeForInput(group.start_time);
@@ -179,8 +179,8 @@ export default function TeacherGroupsPage() {
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Мои группы</h1>
-          <p className="text-gray-600 text-sm">Управляйте вашими группами и расписанием</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Мои классы</h1>
+          <p className="text-gray-600 text-sm">Управляйте вашими классами и расписанием</p>
         </div>
 
         {isLoading && (
@@ -208,7 +208,7 @@ export default function TeacherGroupsPage() {
                 <Users className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                 <p className="text-gray-600 text-lg font-medium mb-2">Нет назначенных групп</p>
                 <p className="text-gray-500 text-sm mb-6">
-                  К вам пока не назначены группы для преподавания.
+                  К вам пока не назначены классы для преподавания.
                 </p>
               </div>
             )}

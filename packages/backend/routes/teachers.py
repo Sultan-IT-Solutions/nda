@@ -274,6 +274,58 @@ async def get_teacher_groups(user: dict = Depends(require_teacher)):
         })
     return {"groups": groups}
 
+
+@router.get("/my-subjects")
+async def get_teacher_subjects(user: dict = Depends(require_teacher)):
+    pool = await get_connection()
+    teacher_id = await resolve_teacher_id(pool, user["id"])
+    if not teacher_id:
+        raise HTTPException(status_code=404, detail="Teacher profile not found")
+
+    rows = await pool.fetch(
+        """
+        SELECT
+            cs.id,
+            cs.group_id,
+            g.name AS group_name,
+            cs.subject_id,
+            s.name AS subject_name,
+            s.color AS subject_color,
+            cs.is_elective,
+            cs.hall_id,
+            h.name AS hall_name,
+            array_remove(array_agg(DISTINCT u.name), NULL) AS teacher_names
+        FROM class_subjects cs
+        INNER JOIN class_subject_teachers cst ON cst.class_subject_id = cs.id AND cst.teacher_id = $1
+        LEFT JOIN groups g ON g.id = cs.group_id
+        LEFT JOIN subjects s ON s.id = cs.subject_id
+        LEFT JOIN halls h ON h.id = cs.hall_id
+        LEFT JOIN class_subject_teachers cst_all ON cst_all.class_subject_id = cs.id
+        LEFT JOIN teachers t ON t.id = cst_all.teacher_id
+        LEFT JOIN users u ON u.id = t.user_id
+        GROUP BY cs.id, cs.group_id, g.name, cs.subject_id, s.name, s.color, cs.is_elective, cs.hall_id, h.name
+        ORDER BY g.name, s.name
+        """,
+        teacher_id,
+    )
+
+    subjects = []
+    for row in rows:
+        subjects.append({
+            "id": int(row["id"]),
+            "group_id": int(row["group_id"]) if row["group_id"] else None,
+            "group_name": row["group_name"],
+            "subject_id": row["subject_id"],
+            "subject_name": row["subject_name"],
+            "subject_color": row["subject_color"],
+            "is_elective": bool(row["is_elective"]),
+            "hall_id": row["hall_id"],
+            "hall_name": row["hall_name"],
+            "teacher_names": [str(n) for n in (row["teacher_names"] or []) if n],
+        })
+
+    return {"subjects": subjects}
+
 @router.post("/groups")
 async def create_group(data: CreateGroupRequest, user: dict = Depends(require_teacher)):
     pool = await get_connection()
@@ -663,8 +715,14 @@ async def save_lesson_attendance(group_id: int, data: SaveLessonAttendanceReques
                 attended = status == "P"
                 await conn.execute(
                     """
-                    INSERT INTO attendance_records (group_id, student_id, teacher_id, attended, recorded_at)
-                    VALUES ($1, $2, $3, $4, $5)
+                    INSERT INTO attendance_records (
+                        group_id, class_subject_id, student_id, teacher_id, attended, recorded_at
+                    )
+                    VALUES (
+                        $1,
+                        (SELECT id FROM class_subjects WHERE group_id = $1 ORDER BY is_elective ASC, id ASC LIMIT 1),
+                        $2, $3, $4, $5
+                    )
                     """,
                     group_id, student_id, teacher_id, attended, datetime.combine(lesson_date, datetime.now().time())
                 )
@@ -751,8 +809,12 @@ async def mark_attendance(group_id: int, student_id: int, data: AttendanceReques
         raise HTTPException(status_code=403, detail="Not assigned to this group")
     await pool.execute(
         """
-        INSERT INTO attendance_records (group_id, student_id, teacher_id, attended)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO attendance_records (group_id, class_subject_id, student_id, teacher_id, attended)
+        VALUES (
+            $1,
+            (SELECT id FROM class_subjects WHERE group_id = $1 ORDER BY is_elective ASC, id ASC LIMIT 1),
+            $2, $3, $4
+        )
         """,
         group_id, student_id, teacher_id, data.attended
     )
@@ -781,14 +843,19 @@ async def get_attendance_summary(user: dict = Depends(require_teacher)):
     rows = await pool.fetch(
         """
         SELECT
-            g.id,
-            g.name,
+            cs.id AS class_subject_id,
+            s.name AS subject_name,
+            g.id AS group_id,
+            g.name AS group_name,
             COUNT(ar.id) AS total_records,
             SUM(CASE WHEN ar.attended THEN 1 ELSE 0 END) AS attended_count
-        FROM groups g
-        INNER JOIN group_teachers gt ON gt.group_id = g.id AND gt.teacher_id = $1
-        LEFT JOIN attendance_records ar ON ar.group_id = g.id
-        GROUP BY g.id, g.name
+        FROM class_subjects cs
+        JOIN groups g ON g.id = cs.group_id
+        JOIN class_subject_teachers cst ON cst.class_subject_id = cs.id AND cst.teacher_id = $1
+        LEFT JOIN subjects s ON s.id = cs.subject_id
+        LEFT JOIN attendance_records ar ON ar.class_subject_id = cs.id
+        GROUP BY cs.id, s.name, g.id, g.name
+        ORDER BY g.name, s.name
         """,
         teacher_id
     )
@@ -798,8 +865,10 @@ async def get_attendance_summary(user: dict = Depends(require_teacher)):
         attended = int(r["attended_count"]) if r["attended_count"] else 0
         avg = (attended / total * 100) if total > 0 else None
         summary.append({
-            "group_id": r["id"],
-            "group_name": r["name"],
+            "group_id": r["group_id"],
+            "group_name": r["group_name"],
+            "class_subject_id": r["class_subject_id"],
+            "subject_name": r["subject_name"],
             "total_lessons": total,
             "average_attendance": round(avg, 1) if avg else None
         })
@@ -836,8 +905,14 @@ async def submit_reschedule_request(data: RescheduleRequest, user: dict = Depend
                 raise HTTPException(status_code=404, detail="Group not found")
             new_lesson = await pool.fetchrow(
                 """
-                INSERT INTO lessons (group_id, teacher_id, hall_id, start_time, duration_minutes)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO lessons (
+                    group_id, class_subject_id, teacher_id, hall_id, start_time, duration_minutes
+                )
+                VALUES (
+                    $1,
+                    (SELECT id FROM class_subjects WHERE group_id = $1 ORDER BY is_elective ASC, id ASC LIMIT 1),
+                    $2, $3, $4, $5
+                )
                 RETURNING id
                 """,
                 group_id, teacher_id, group["hall_id"], data.new_start_time, group["duration_minutes"] or 60
@@ -1187,7 +1262,11 @@ async def save_teacher_lesson_attendance(
                 await pool.execute(
                     """
                     UPDATE attendance_records
-                    SET status = $1, attended = $2, teacher_id = $3, recorded_at = CURRENT_TIMESTAMP
+                    SET status = $1,
+                        attended = $2,
+                        teacher_id = $3,
+                        class_subject_id = COALESCE(class_subject_id, (SELECT class_subject_id FROM lessons WHERE id = $4)),
+                        recorded_at = CURRENT_TIMESTAMP
                     WHERE lesson_id = $4 AND student_id = $5
                     """,
                     status, attended, teacher_id, lesson_id, student_id
@@ -1195,8 +1274,14 @@ async def save_teacher_lesson_attendance(
             else:
                 await pool.execute(
                     """
-                    INSERT INTO attendance_records (group_id, student_id, teacher_id, attended, lesson_id, status, recorded_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+                    INSERT INTO attendance_records (
+                        group_id, class_subject_id, student_id, teacher_id, attended, lesson_id, status, recorded_at
+                    )
+                    VALUES (
+                        $1,
+                        (SELECT class_subject_id FROM lessons WHERE id = $5),
+                        $2, $3, $4, $5, $6, CURRENT_TIMESTAMP
+                    )
                     """,
                     group_id, student_id, teacher_id, attended, lesson_id, status
                 )
@@ -1451,12 +1536,19 @@ async def save_teacher_lesson_attendance(
             status = record['status']
             await pool.execute(
                 """
-                INSERT INTO attendance_records (group_id, student_id, teacher_id, lesson_id, status, recorded_at)
-                VALUES ($1, $2, $3, $4, $5, NOW())
+                INSERT INTO attendance_records (
+                    group_id, class_subject_id, student_id, teacher_id, lesson_id, status, recorded_at
+                )
+                VALUES (
+                    $1,
+                    (SELECT class_subject_id FROM lessons WHERE id = $4),
+                    $2, $3, $4, $5, NOW()
+                )
                 ON CONFLICT (lesson_id, student_id)
                 DO UPDATE SET
                     status = EXCLUDED.status,
                     teacher_id = EXCLUDED.teacher_id,
+                    class_subject_id = COALESCE(attendance_records.class_subject_id, EXCLUDED.class_subject_id),
                     recorded_at = EXCLUDED.recorded_at
                 """,
                 group_id, student_id, teacher_id, lesson_id, status
@@ -1492,8 +1584,14 @@ async def create_teacher_lesson(
         duration_minutes = int((end_time - start_time).total_seconds() / 60)
         lesson_id = await pool.fetchval(
             """
-            INSERT INTO lessons (group_id, class_name, teacher_id, hall_id, start_time, duration_minutes)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO lessons (
+                group_id, class_subject_id, class_name, teacher_id, hall_id, start_time, duration_minutes
+            )
+            VALUES (
+                $1,
+                (SELECT id FROM class_subjects WHERE group_id = $1 ORDER BY is_elective ASC, id ASC LIMIT 1),
+                $2, $3, $4, $5, $6
+            )
             RETURNING id
             """,
             group_id,

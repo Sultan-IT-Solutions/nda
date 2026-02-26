@@ -117,18 +117,18 @@ export function OnboardingTour() {
         route: "/profile",
         element: "[data-tour='profile-attendance']",
         title: "Посещаемость",
-        description: "Нажимайте на статусы или кнопку «Занятия», чтобы увидеть историю посещений по группе.",
+        description: "Нажимайте на статусы или кнопку «Занятия», чтобы увидеть историю посещений по классу.",
       },
       {
         route: "/schedule",
         element: "[data-tour='schedule-filters']",
-        title: "Расписание групп",
-        description: "Здесь можно подобрать группу по преподавателю, залу, времени и типу, и записаться.",
+        title: "Расписание классов",
+        description: "Здесь можно подобрать класс по преподавателю, залу, времени и типу, и записаться.",
       },
       {
         route: "/my-groups",
         element: "[data-tour='my-groups-list']",
-        title: "Мои группы",
+        title: "Мои классы",
         description: "Здесь можно посмотреть ваши текущие записи.",
       },
       {

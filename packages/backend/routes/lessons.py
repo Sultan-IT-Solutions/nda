@@ -67,10 +67,14 @@ async def create_lesson(data: CreateLessonRequest, user: dict = Depends(require_
     result = await pool.fetchrow(
         """
         INSERT INTO lessons (
-            group_id, class_name, teacher_id, hall_id, start_time,
+            group_id, class_subject_id, class_name, teacher_id, hall_id, start_time,
             duration_minutes, lesson_type, topic, comment, direction,
             repeat_frequency, is_additional
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ) VALUES (
+            $1,
+            (SELECT id FROM class_subjects WHERE group_id = $1 ORDER BY is_elective ASC, id ASC LIMIT 1),
+            $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+        )
         RETURNING id
         """,
         lesson_data["group_id"], lesson_data["class_name"], lesson_data["teacher_id"],
@@ -79,6 +83,7 @@ async def create_lesson(data: CreateLessonRequest, user: dict = Depends(require_
         lesson_data["direction"], lesson_data["repeat_frequency"], lesson_data["is_additional"]
     )
     return {"message": "Lesson created successfully", "lesson_id": result["id"]}
+
 @router.get("/teacher")
 async def get_teacher_lessons(user: dict = Depends(require_auth)):
     user_role = user.get("role")

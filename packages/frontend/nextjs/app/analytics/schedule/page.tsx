@@ -331,7 +331,7 @@ export default function AnalyticsSchedulePage() {
 
           if (lesson.group_id) {
             const confirmGroupDeletion = confirm(
-              "Это регулярное занятие группы. Удаление удалит всю группу и все связанные с ней данные. Продолжить?"
+              "Это регулярное занятие класса. Удаление удалит весь класс и все связанные с ним данные. Продолжить?"
             );
 
             if (confirmGroupDeletion) {
@@ -355,7 +355,7 @@ export default function AnalyticsSchedulePage() {
         } else if (lesson.lesson_id) {
           toast.error("Ошибка при удалении урока");
         } else {
-          toast.error("Ошибка при удалении группы");
+          toast.error("Ошибка при удалении класса");
         }
       }
     }
@@ -553,10 +553,10 @@ export default function AnalyticsSchedulePage() {
             <label className="text-sm font-medium mb-2 block">Группа</label>
             <Select value={selectedGroup} onValueChange={setSelectedGroup}>
               <SelectTrigger className="bg-white">
-                <SelectValue placeholder="Все группы" />
+                <SelectValue placeholder="Все классы" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Все группы</SelectItem>
+                <SelectItem value="all">Все классы</SelectItem>
                 {uniqueGroups.map(group => (
                   <SelectItem key={group} value={group}>{group}</SelectItem>
                 ))}

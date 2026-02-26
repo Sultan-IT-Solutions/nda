@@ -1,7 +1,7 @@
 "use client"
 
 import { formatAverage00 } from "@/lib/grade-format"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { User } from "@phosphor-icons/react"
 import { TeacherHeader } from "@/components/teacher-header"
@@ -58,6 +58,27 @@ interface GroupData {
   trial_selected_lesson_start_time?: string | null
   start_date?: string | null
   end_date?: string | null
+  subjects?: GroupSubject[]
+}
+
+interface GroupSubject {
+  id: number
+  subject_id: number | null
+  subject_name: string | null
+  subject_color?: string | null
+  is_elective?: boolean
+  hall_name?: string | null
+  teacher_names?: string[]
+}
+
+interface SubjectCardItem {
+  id: number
+  title: string
+  groupName: string
+  groupId?: number
+  hallName: string
+  teacherNames: string[]
+  badge: string
 }
 
 interface TeacherGroupApi {
@@ -86,6 +107,10 @@ interface GradeItem {
   id: number
   group_id: number
   group_name: string
+  class_subject_id?: number | null
+  subject_id?: number | null
+  subject_name?: string | null
+  subject_color?: string | null
   attendance_record_id?: number | null
   lesson_id?: number | null
   value: number
@@ -99,6 +124,7 @@ interface LessonAttendanceItem {
   lesson_id: number
   group_id: number
   start_time: string | null
+  class_subject_id?: number | null
   attendance_id?: number | null
 }
 
@@ -110,6 +136,7 @@ export default function ProfilePage() {
   const [user, setUser] = useState<UserData | null>(null)
   const [student, setStudent] = useState<StudentData | null>(null)
   const [groups, setGroups] = useState<GroupData[]>([])
+  const [teacherSubjects, setTeacherSubjects] = useState<SubjectCardItem[]>([])
   const [lessonAttendance, setLessonAttendance] = useState<any[]>([])
   const [attendanceData, setAttendanceData] = useState<any[]>([])
   const [grades, setGrades] = useState<GradeItem[]>([])
@@ -209,6 +236,22 @@ export default function ProfilePage() {
           } catch (err) {
             // ignoring
           }
+
+          try {
+            const teacherSubjectsData = await API.teachers.getMySubjects() as { subjects?: any[] }
+            const normalizedSubjects: SubjectCardItem[] = (teacherSubjectsData.subjects || []).map((subject) => ({
+              id: subject.id,
+              title: subject.subject_name || "Без названия",
+              groupName: subject.group_name || "Без группы",
+              groupId: subject.group_id ?? null,
+              hallName: subject.hall_name || "Не указан",
+              teacherNames: Array.isArray(subject.teacher_names) ? subject.teacher_names : [],
+              badge: subject.is_elective ? "Электив" : "Обычный",
+            }))
+            setTeacherSubjects(normalizedSubjects)
+          } catch (err) {
+            // ignoring
+          }
         }
 
         setLoading(false)
@@ -242,27 +285,11 @@ export default function ProfilePage() {
     }
   }, [router])
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Загрузка профиля...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-destructive mb-2">Ошибка: {error}</p>
-          <p className="text-sm text-muted-foreground">Убедитесь, что вы авторизованы и сервер запущен.</p>
-        </div>
-      </div>
-    )
-  }
+  const isStudent = user?.role === 'student'
+  const isTeacher = user?.role === 'teacher'
+  const classNames = isStudent
+    ? groups.map((group) => group.name).filter(Boolean).join(', ')
+    : ""
 
   const profile = {
     name: user?.name || "Не указано",
@@ -273,9 +300,6 @@ export default function ProfilePage() {
     registrationDate: user?.created_at ? new Date(user.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : "Не указано",
     groupCount: groups.length
   }
-
-  const isStudent = user?.role === 'student'
-  const isTeacher = user?.role === 'teacher'
 
   const gradesByAttendanceId = new Map<number, GradeItem>()
   const gradesByLessonId = new Map<number, GradeItem>()
@@ -333,69 +357,54 @@ export default function ProfilePage() {
     return `${weekdayCapitalized} · ${date} · ${time}`
   }
 
-  const myGroups = groups.map(group => {
-    const trialSelectedPretty =
-      group.is_trial_enrollment && group.trial_selected_lesson_start_time
-        ? formatTrialSelectedLessonPretty(group.trial_selected_lesson_start_time)
-        : null
-
-    let schedule = trialSelectedPretty || group.schedule || "Не указано";
-    let dayOfWeek = "Не указано";
-    let time = "Не указано";
-
-    if (trialSelectedPretty) {
-      const d = new Date(group.trial_selected_lesson_start_time as string)
-      const weekdayRaw = new Intl.DateTimeFormat("ru-RU", { weekday: "short", timeZone: "Asia/Almaty" }).format(d)
-      dayOfWeek = weekdayRaw.replace(/\.$/, "")
-      dayOfWeek = dayOfWeek.length > 0 ? dayOfWeek[0].toUpperCase() + dayOfWeek.slice(1) : dayOfWeek
-
-      time = new Intl.DateTimeFormat("ru-RU", {
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone: "Asia/Almaty",
-      }).format(d)
-    } else if (group.schedule && group.schedule !== "Не назначено") {
-      try {
-
-        const scheduleEntries = group.schedule.split(", ");
-        const dayNames: string[] = [];
-        const times: string[] = [];
-
-        scheduleEntries.forEach((entry: string) => {
-          const parts = entry.trim().split(" ");
-          if (parts.length >= 2) {
-            dayNames.push(parts[0]);
-            times.push(parts[1]);
-          }
-        });
-
-        if (dayNames.length > 0) {
-          dayOfWeek = dayNames.join(", ");
-          time = times.length > 0 ? times.join(", ") : "Не указано";
-        }
-      } catch (e) {
-        console.error('Error parsing schedule:', e);
-      }
+  const subjectCards = useMemo<SubjectCardItem[]>(() => {
+    if (!isStudent) {
+      return teacherSubjects
     }
 
-    return {
-      id: group.id,
-      title: group.name || "Без названия",
-      category: group.category_name || "Без направления",
-      badge: group.isActive
-        ? (group.is_trial ? "Пробный" : "Регулярный")
-        : "Группа закрыта",
-      instructor: group.teacher_name || "Не назначен",
-      participants: [],
-      location: schedule,
-      day: dayOfWeek,
-      time: time,
-      hall: group.hall_name || "Не указан"
-    };
-  })
+    const items: SubjectCardItem[] = []
+    groups.forEach((group) => {
+      const subjects = group.subjects || []
+      subjects.forEach((subject) => {
+        const teacherNames = subject.teacher_names?.length
+          ? subject.teacher_names
+          : group.teacher_name
+            ? [group.teacher_name]
+            : []
 
-  const totalGroupPages = Math.ceil(myGroups.length / groupsPerPage)
-  const currentGroups = myGroups.slice(
+        items.push({
+          id: subject.id,
+          title: subject.subject_name || "Без названия",
+          groupName: group.name || "Без группы",
+          groupId: group.id,
+          hallName: subject.hall_name || group.hall_name || "Не указан",
+          teacherNames,
+          badge: subject.is_elective ? "Электив" : "Обычный",
+        })
+      })
+    })
+
+    return items
+  }, [groups, isStudent, teacherSubjects])
+
+  const groupById = useMemo(() => {
+    const map = new Map<number, GroupData>()
+    groups.forEach((group) => map.set(group.id, group))
+    return map
+  }, [groups])
+
+  const subjectByGroupId = useMemo(() => {
+    const map = new Map<number, SubjectCardItem>()
+    subjectCards.forEach((subject) => {
+      if (typeof subject.groupId === "number") {
+        map.set(subject.groupId, subject)
+      }
+    })
+    return map
+  }, [subjectCards])
+
+  const totalGroupPages = Math.ceil(subjectCards.length / groupsPerPage)
+  const currentSubjects = subjectCards.slice(
     currentGroupPage * groupsPerPage,
     (currentGroupPage + 1) * groupsPerPage
   )
@@ -412,26 +421,31 @@ export default function ProfilePage() {
     }
   }
 
-  const subscriptions = (isStudent ? groups : []).map(group => {
+  const subscriptions = (isStudent ? subjectCards : []).map(subject => {
+    const group = typeof subject.groupId === "number" ? groupById.get(subject.groupId) : undefined
+    const subjectLessons = lessonAttendance.filter((lesson) => {
+      const lessonSubjectId = lesson.class_subject_id ?? subjectByGroupId.get(lesson.group_id)?.id
+      return lessonSubjectId === subject.id
+    })
 
-    const groupLessons = lessonAttendance.filter(lesson => lesson.group_id === group.id)
-
-    const remainingLessons = groupLessons.filter(lesson => lesson.status === null).length
-
-    const attendedLessons = groupLessons.filter(lesson => lesson.status !== null).length
-
-    const totalLessons = groupLessons.length
+    const remainingLessons = subjectLessons.filter(lesson => lesson.status === null).length
+    const attendedLessons = subjectLessons.filter(lesson => lesson.status !== null).length
+    const totalLessons = subjectLessons.length
 
     return {
-      id: group.id,
-      title: group.name || "Без названия",
-      category: group.category_name || "Без направления",
-      badge: group.is_trial ? "Пробный" : (group.isActive ? "Регулярный" : "Группа закрыта"),
+      id: subject.id,
+      title: subject.title,
+      category: subject.groupName,
+      badge: subject.badge,
       used: attendedLessons,
       total: totalLessons,
       remaining: remainingLessons,
-      startDate: group.start_date ? new Date(group.start_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }) : "Не указано",
-      endDate: group.end_date ? new Date(group.end_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }) : "Не указано"
+      startDate: group?.start_date
+        ? new Date(group.start_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })
+        : "Не указано",
+      endDate: group?.end_date
+        ? new Date(group.end_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })
+        : "Не указано",
     }
   })
 
@@ -455,7 +469,10 @@ export default function ProfilePage() {
 
   const selectedGroupLessons = (selectedGroupFilter == null
     ? []
-    : lessonAttendance.filter((lesson) => lesson.group_id === selectedGroupFilter)
+    : lessonAttendance.filter((lesson) => {
+      const lessonSubjectId = lesson.class_subject_id ?? subjectByGroupId.get(lesson.group_id)?.id
+      return lessonSubjectId === selectedGroupFilter
+    })
   )
     .filter((lesson) => {
       if (selectedStatusFilter === 'all') return true
@@ -515,6 +532,10 @@ export default function ProfilePage() {
     id: data.id,
     title: data.title || "Без названия",
     category: data.category || "Без направления",
+    groupId: data.group_id ?? null,
+    groupName: data.group_name ?? null,
+    classSubjectId: data.class_subject_id ?? null,
+    subjectName: data.subject_name ?? null,
     attended: data.attended,
     present: data.present,
     excused: data.excused,
@@ -525,6 +546,40 @@ export default function ProfilePage() {
     points: data.points,
     maxPoints: data.maxPoints
   }))
+
+  const attendanceCards = attendance.map((item) => {
+    const group = typeof item.groupId === "number" ? groupById.get(item.groupId) : groupById.get(item.id)
+    const subjectNames = item.subjectName
+      ? [item.subjectName]
+      : group?.subjects?.map((subject) => subject.subject_name).filter(Boolean) || []
+    return {
+      ...item,
+      displayTitle: subjectNames.length > 0 ? subjectNames.join(', ') : item.title,
+      displaySubtitle: item.groupName || group?.name || item.category,
+    }
+  })
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Загрузка профиля...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-destructive mb-2">Ошибка: {error}</p>
+          <p className="text-sm text-muted-foreground">Убедитесь, что вы авторизованы.</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -590,8 +645,12 @@ export default function ProfilePage() {
                   <TrendUp size={18} className="text-primary" />
                 </div>
                 <div className="flex-1">
-                  <div className="text-xs text-muted-foreground mb-0.5">Групп</div>
-                  <div className="text-sm text-foreground">{profile.groupCount}</div>
+                  <div className="text-xs text-muted-foreground mb-0.5">
+                    {isStudent ? "Класс" : "Групп"}
+                  </div>
+                  <div className="text-sm text-foreground">
+                    {isStudent ? (classNames || "Не назначен") : profile.groupCount}
+                  </div>
                 </div>
               </div>
             </div>
@@ -599,8 +658,8 @@ export default function ProfilePage() {
 
           <Card className="p-6 lg:col-span-2 border-0 shadow-sm bg-card/80">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-base font-semibold text-foreground">Мои группы и преподаватели</h2>
-              {myGroups.length > groupsPerPage && (
+              <h2 className="text-base font-semibold text-foreground">Мои предметы и преподаватели</h2>
+              {subjectCards.length > groupsPerPage && (
                 <div className="flex items-center gap-2">
                   <button
                     onClick={goToPrevGroupPage}
@@ -624,46 +683,35 @@ export default function ProfilePage() {
             </div>
 
             <div className="space-y-4">
-              {myGroups.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">Нет доступных групп</p>
+              {subjectCards.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">Нет доступных предметов</p>
               ) : (
-                currentGroups.map((group) => (
-                <div key={group.id} className="bg-primary/5 rounded-xl p-5 border border-primary/10 hover:border-primary/20 transition-colors">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h3 className="font-semibold text-base mb-1 text-foreground">{group.title}</h3>
-                      <p className="text-sm text-primary">{group.category}</p>
-                    </div>
-                    <Badge className="bg-primary text-white border-0 text-xs font-medium px-3">{group.badge}</Badge>
-                  </div>
-
-                  <div className="space-y-3 text-sm">
-                    <div className="flex items-center gap-2">
-                      <User size={16} className="text-primary" weight="duotone" />
-                      <span className="text-muted-foreground text-xs">Преподаватель:</span>
-                      <div className="font-medium text-foreground">{group.instructor}</div>
+                currentSubjects.map((subject) => (
+                  <div key={subject.id} className="bg-primary/5 rounded-xl p-5 border border-primary/10 hover:border-primary/20 transition-colors">
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <h3 className="font-semibold text-base mb-1 text-foreground">{subject.title}</h3>
+                        <p className="text-sm text-primary">{subject.groupName}</p>
+                      </div>
+                      <Badge className="bg-primary text-white border-0 text-xs font-medium px-3">{subject.badge}</Badge>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <MapPin size={16} className="text-primary" weight="duotone" />
-                      <span className="text-muted-foreground text-xs">Зал:</span>
-                      <div className="font-medium text-foreground">{group.hall}</div>
-                    </div>
-                  </div>
+                    <div className="space-y-3 text-sm">
+                      <div className="flex items-center gap-2">
+                        <User size={16} className="text-primary" weight="duotone" />
+                        <span className="text-muted-foreground text-xs">Преподаватель:</span>
+                        <div className="font-medium text-foreground">
+                          {subject.teacherNames.length > 0 ? subject.teacherNames.join(", ") : "Не назначен"}
+                        </div>
+                      </div>
 
-                  {group.participants.length > 1 && (
-                    <div className="mt-3 pt-3 border-t border-border">
-                      <div className="text-xs text-muted-foreground mb-2">Участники:</div>
-                      <div className="flex flex-wrap gap-2">
-                        {group.participants.map((participant, idx) => (
-                          <Badge key={idx} variant="outline" className="text-xs">
-                            {participant}
-                          </Badge>
-                        ))}
+                      <div className="flex items-center gap-2">
+                        <MapPin size={16} className="text-primary" weight="duotone" />
+                        <span className="text-muted-foreground text-xs">Зал:</span>
+                        <div className="font-medium text-foreground">{subject.hallName}</div>
                       </div>
                     </div>
-                  )}
-                </div>
+                  </div>
                 ))
               )}
             </div>
@@ -676,7 +724,7 @@ export default function ProfilePage() {
               <div className="p-2 rounded-lg bg-primary/10">
                 <Calendar size={20} className="text-primary" weight="duotone" />
               </div>
-              <h2 className="text-base font-semibold text-foreground">Мои группы</h2>
+              <h2 className="text-base font-semibold text-foreground">Мои предметы</h2>
             </div>
             {isStudent && subscriptions.length > subscriptionsPerPage && (
               <div className="flex items-center gap-2">
@@ -748,7 +796,7 @@ export default function ProfilePage() {
               )
             ) : (
               subscriptions.length === 0 ? (
-                <div className="col-span-3 text-center text-muted-foreground py-8">Нет активных групп</div>
+                <div className="col-span-3 text-center text-muted-foreground py-8">Нет активных предметов</div>
               ) : (
                 currentSubscriptions.map((sub) => (
                   <div key={sub.id} className="space-y-4">
@@ -799,35 +847,41 @@ export default function ProfilePage() {
               <div className="text-sm text-muted-foreground">Оценок пока нет</div>
             ) : (
               <div className="space-y-6">
-                {groups.map((group) => {
-                  const groupLessons = attendanceLessons
-                    .filter((lesson) => lesson.group_id === group.id)
+                {subjectCards.map((subject) => {
+                  const subjectLessons = attendanceLessons
+                    .filter((lesson) => {
+                      const lessonSubjectId = lesson.class_subject_id ?? subjectByGroupId.get(lesson.group_id)?.id
+                      return lessonSubjectId === subject.id
+                    })
                     .sort((a, b) => new Date(a.start_time ?? "").getTime() - new Date(b.start_time ?? "").getTime())
 
-                  const groupGrades = grades.filter((grade) => grade.group_id === group.id)
-                  const groupValues = groupGrades
+                  const subjectGrades = grades.filter((grade) => {
+                    const gradeSubjectId = grade.class_subject_id ?? subjectByGroupId.get(grade.group_id)?.id
+                    return gradeSubjectId === subject.id
+                  })
+                  const subjectValues = subjectGrades
                     .map((grade) => (Number.isFinite(grade.value) ? grade.value : null))
                     .filter((value): value is number => value !== null)
-                  const groupAverage = groupValues.length > 0
-                    ? formatAverage00(groupValues.reduce((sum, value) => sum + value, 0) / groupValues.length)
+                  const subjectAverage = subjectValues.length > 0
+                    ? formatAverage00(subjectValues.reduce((sum, value) => sum + value, 0) / subjectValues.length)
                     : null
 
-                  const isOpen = openGradesGroupId === group.id
+                  const isOpen = openGradesGroupId === subject.id
 
                   return (
-                    <div key={group.id} className="rounded-2xl border border-border/50 bg-white/60 overflow-hidden">
+                    <div key={subject.id} className="rounded-2xl border border-border/50 bg-white/60 overflow-hidden">
                       <button
                         type="button"
-                        onClick={() => setOpenGradesGroupId((prev) => (prev === group.id ? null : group.id))}
+                        onClick={() => setOpenGradesGroupId((prev) => (prev === subject.id ? null : subject.id))}
                         className="w-full px-4 py-3 border-b border-border/60 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-left"
                       >
                         <div>
-                          <div className="text-sm font-semibold">{group.name}</div>
-                          <div className="text-xs text-muted-foreground">Журнал оценок</div>
+                          <div className="text-sm font-semibold">{subject.title}</div>
+                          <div className="text-xs text-muted-foreground">{subject.groupName}</div>
                         </div>
                         <div className="flex items-center gap-3">
                           <div className="text-sm font-semibold text-primary">
-                            Средняя: {groupAverage ?? "—"}
+                            Средняя: {subjectAverage ?? "—"}
                           </div>
                           <CaretDown
                             size={16}
@@ -846,21 +900,21 @@ export default function ProfilePage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {groupLessons.length === 0 ? (
+                            {subjectLessons.length === 0 ? (
                               <TableRow>
                                 <TableCell colSpan={3} className="text-center text-sm text-muted-foreground">
                                   Нет занятий
                                 </TableCell>
                               </TableRow>
                             ) : (
-                              groupLessons.map((lesson: any) => {
+                              subjectLessons.map((lesson: any) => {
                                 const attendanceId = lesson.attendance_id ?? lesson.id
                                 const grade = attendanceId
                                   ? gradesByAttendanceId.get(attendanceId) ?? gradesByLessonId.get(lesson.lesson_id)
                                   : gradesByLessonId.get(lesson.lesson_id)
                                 const commentText = grade?.comment?.trim()
                                 return (
-                                  <TableRow key={`${group.id}:${lesson.lesson_id}`}>
+                                  <TableRow key={`${subject.id}:${lesson.lesson_id}`}>
                                     <TableCell>
                                       {formatLessonDateTime(lesson.start_time, lesson.duration_minutes)}
                                     </TableCell>
@@ -897,12 +951,12 @@ export default function ProfilePage() {
           <div className="space-y-8">
             {attendance.length > 0 && (
               <div className="space-y-8">
-                {attendance.map((item) => (
+                {attendanceCards.map((item) => (
                   <div key={item.id}>
                     <div className="flex items-start justify-between mb-4">
                       <div>
-                        <h3 className="font-semibold mb-1 text-foreground">{item.title}</h3>
-                        <p className="text-sm text-muted-foreground">{item.category}</p>
+                        <h3 className="font-semibold mb-1 text-foreground">{item.displayTitle}</h3>
+                        <p className="text-sm text-muted-foreground">{item.displaySubtitle}</p>
                       </div>
                       <div className="text-right">
                         <div className="text-xs text-muted-foreground mb-1">Посещаемость</div>

@@ -228,6 +228,21 @@ class UpdateGroupRequest(BaseModel):
 class GroupLimitRequest(BaseModel):
     capacity: int
 
+class ClassSubjectCreateRequest(BaseModel):
+    subject_id: int
+    is_elective: bool = False
+    hall_id: Optional[int] = None
+    teacher_ids: Optional[List[int]] = None
+    student_ids: Optional[List[int]] = None
+
+
+class ClassSubjectUpdateRequest(BaseModel):
+    subject_id: Optional[int] = None
+    is_elective: Optional[bool] = None
+    hall_id: Optional[int] = None
+    teacher_ids: Optional[List[int]] = None
+    student_ids: Optional[List[int]] = None
+
 class AddStudentToGroupRequest(BaseModel):
     student_id: int
     is_trial: bool = False
@@ -1307,11 +1322,260 @@ async def get_group_details(group_id: int, user: dict = Depends(require_admin)):
         "duration_minutes": row["duration_minutes"]
     }
 
+
+async def _fetch_class_subjects(pool, group_id: int) -> List[dict]:
+    rows = await pool.fetch(
+        """
+        SELECT
+            cs.id,
+            cs.subject_id,
+            cs.is_elective,
+            cs.hall_id,
+            h.name AS hall_name,
+            c.name AS subject_name,
+            c.color AS subject_color,
+            array_remove(array_agg(DISTINCT css.student_id), NULL) AS student_ids,
+            array_remove(array_agg(DISTINCT t.id), NULL) AS teacher_ids,
+            array_remove(array_agg(DISTINCT u.name), NULL) AS teacher_names
+        FROM class_subjects cs
+    LEFT JOIN subjects c ON c.id = cs.subject_id
+        LEFT JOIN halls h ON h.id = cs.hall_id
+        LEFT JOIN class_subject_students css ON css.class_subject_id = cs.id
+        LEFT JOIN class_subject_teachers cst ON cst.class_subject_id = cs.id
+        LEFT JOIN teachers t ON t.id = cst.teacher_id
+        LEFT JOIN users u ON u.id = t.user_id
+        WHERE cs.group_id = $1
+        GROUP BY cs.id, cs.subject_id, cs.is_elective, cs.hall_id, h.name, c.name, c.color
+        ORDER BY c.name
+        """,
+        group_id,
+    )
+    subjects = []
+    for row in rows:
+        subjects.append({
+            "id": row["id"],
+            "subject_id": row["subject_id"],
+            "subject_name": row["subject_name"],
+            "subject_color": row["subject_color"],
+            "is_elective": row["is_elective"],
+            "hall_id": row["hall_id"],
+            "hall_name": row["hall_name"],
+            "student_ids": [int(s) for s in (row["student_ids"] or []) if s],
+            "teacher_ids": [int(t) for t in (row["teacher_ids"] or []) if t],
+            "teacher_names": [str(n) for n in (row["teacher_names"] or []) if n],
+        })
+    return subjects
+
+
+@router.get("/groups/{group_id}/subjects")
+async def get_class_subjects(group_id: int, user: dict = Depends(require_admin)):
+    pool = await get_connection()
+    group_exists = await pool.fetchval("SELECT 1 FROM groups WHERE id = $1", group_id)
+    if not group_exists:
+        raise HTTPException(status_code=404, detail="Class not found")
+    subjects = await _fetch_class_subjects(pool, group_id)
+    return {"subjects": subjects}
+
+
+@router.post("/groups/{group_id}/subjects")
+async def add_class_subject(
+    group_id: int,
+    data: ClassSubjectCreateRequest,
+    request: Request,
+    user: dict = Depends(require_admin),
+):
+    pool = await get_connection()
+    electives_enabled = await get_bool_setting(pool, "school.electives.enabled", True)
+    if data.is_elective and not electives_enabled:
+        raise HTTPException(status_code=400, detail="Элективные предметы отключены в настройках")
+
+    group_exists = await pool.fetchval("SELECT 1 FROM groups WHERE id = $1", group_id)
+    if not group_exists:
+        raise HTTPException(status_code=404, detail="Class not found")
+
+    subject_exists = await pool.fetchval("SELECT 1 FROM subjects WHERE id = $1", data.subject_id)
+    if not subject_exists:
+        raise HTTPException(status_code=404, detail="Subject not found")
+
+    try:
+        row = await pool.fetchrow(
+            """
+            INSERT INTO class_subjects (group_id, subject_id, is_elective, hall_id)
+            VALUES ($1, $2, $3, $4)
+            RETURNING id
+            """,
+            group_id,
+            data.subject_id,
+            data.is_elective,
+            data.hall_id,
+        )
+    except Exception as exc:
+        if "unique" in str(exc).lower():
+            raise HTTPException(status_code=400, detail="Предмет уже привязан к этому классу")
+        raise
+
+    class_subject_id = row["id"]
+
+    teacher_ids = data.teacher_ids or []
+    for idx, teacher_id in enumerate(teacher_ids):
+        await pool.execute(
+            """
+            INSERT INTO class_subject_teachers (class_subject_id, teacher_id, is_main)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (class_subject_id, teacher_id) DO UPDATE SET is_main = EXCLUDED.is_main
+            """,
+            class_subject_id,
+            teacher_id,
+            idx == 0,
+        )
+
+    student_ids = data.student_ids or []
+    if data.is_elective:
+        for student_id in student_ids:
+            await pool.execute(
+                """
+                INSERT INTO class_subject_students (class_subject_id, student_id)
+                VALUES ($1, $2)
+                ON CONFLICT (class_subject_id, student_id) DO NOTHING
+                """,
+                class_subject_id,
+                student_id,
+            )
+
+    await log_action(
+        actor=user,
+        action_key="admin.classSubjects.created",
+        action_label="Привязка предмета к классу",
+        meta={"group_id": group_id, "subject_id": data.subject_id, "class_subject_id": class_subject_id},
+        request=request,
+    )
+
+    subjects = await _fetch_class_subjects(pool, group_id)
+    return {"subjects": subjects}
+
+
+@router.put("/groups/{group_id}/subjects/{class_subject_id}")
+async def update_class_subject(
+    group_id: int,
+    class_subject_id: int,
+    data: ClassSubjectUpdateRequest,
+    request: Request,
+    user: dict = Depends(require_admin),
+):
+    pool = await get_connection()
+    electives_enabled = await get_bool_setting(pool, "school.electives.enabled", True)
+    if data.is_elective and not electives_enabled:
+        raise HTTPException(status_code=400, detail="Элективные предметы отключены в настройках")
+
+    exists = await pool.fetchval(
+        "SELECT 1 FROM class_subjects WHERE id = $1 AND group_id = $2",
+        class_subject_id,
+        group_id,
+    )
+    if not exists:
+        raise HTTPException(status_code=404, detail="Class subject not found")
+
+    updates = []
+    values = []
+    param_count = 1
+    if data.subject_id is not None:
+        updates.append(f"subject_id = ${param_count}")
+        values.append(data.subject_id)
+        param_count += 1
+    if data.is_elective is not None:
+        updates.append(f"is_elective = ${param_count}")
+        values.append(data.is_elective)
+        param_count += 1
+    if data.hall_id is not None:
+        updates.append(f"hall_id = ${param_count}")
+        values.append(data.hall_id)
+        param_count += 1
+    if updates:
+        values.append(class_subject_id)
+        await pool.execute(
+            f"UPDATE class_subjects SET {', '.join(updates)} WHERE id = ${param_count}",
+            *values,
+        )
+
+    if data.teacher_ids is not None:
+        await pool.execute(
+            "DELETE FROM class_subject_teachers WHERE class_subject_id = $1",
+            class_subject_id,
+        )
+        for idx, teacher_id in enumerate(data.teacher_ids or []):
+            await pool.execute(
+                """
+                INSERT INTO class_subject_teachers (class_subject_id, teacher_id, is_main)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (class_subject_id, teacher_id) DO UPDATE SET is_main = EXCLUDED.is_main
+                """,
+                class_subject_id,
+                teacher_id,
+                idx == 0,
+            )
+
+    if data.student_ids is not None or data.is_elective is False:
+        await pool.execute(
+            "DELETE FROM class_subject_students WHERE class_subject_id = $1",
+            class_subject_id,
+        )
+        if data.is_elective:
+            for student_id in (data.student_ids or []):
+                await pool.execute(
+                    """
+                    INSERT INTO class_subject_students (class_subject_id, student_id)
+                    VALUES ($1, $2)
+                    ON CONFLICT (class_subject_id, student_id) DO NOTHING
+                    """,
+                    class_subject_id,
+                    student_id,
+                )
+
+    await log_action(
+        actor=user,
+        action_key="admin.classSubjects.updated",
+        action_label="Обновление предмета класса",
+        meta={"group_id": group_id, "class_subject_id": class_subject_id},
+        request=request,
+    )
+
+    subjects = await _fetch_class_subjects(pool, group_id)
+    return {"subjects": subjects}
+
+
+@router.delete("/groups/{group_id}/subjects/{class_subject_id}")
+async def delete_class_subject(
+    group_id: int,
+    class_subject_id: int,
+    request: Request,
+    user: dict = Depends(require_admin),
+):
+    pool = await get_connection()
+    await pool.execute(
+        "DELETE FROM class_subjects WHERE id = $1 AND group_id = $2",
+        class_subject_id,
+        group_id,
+    )
+
+    await log_action(
+        actor=user,
+        action_key="admin.classSubjects.deleted",
+        action_label="Удаление предмета из класса",
+        meta={"group_id": group_id, "class_subject_id": class_subject_id},
+        request=request,
+    )
+
+    subjects = await _fetch_class_subjects(pool, group_id)
+    return {"subjects": subjects}
+
 @router.post("/groups")
 async def create_group(data: CreateGroupRequest, request: Request, user: dict = Depends(require_admin)):
     from datetime import datetime
     pool = await get_connection()
     try:
+        require_teacher = await get_bool_setting(pool, "school.class.require_teacher", False)
+        if require_teacher and not data.main_teacher_id:
+            raise HTTPException(status_code=400, detail="Для класса обязательно назначить учителя")
         print(f"Received group data: {data}")
         start_date = datetime.strptime(data.start_date, "%Y-%m-%d").date()
         end_date = datetime.strptime(data.end_date, "%Y-%m-%d").date() if data.end_date else None
@@ -1362,6 +1626,7 @@ async def create_group(data: CreateGroupRequest, request: Request, user: dict = 
 @router.put("/groups/{group_id}")
 async def update_group(group_id: int, data: UpdateGroupRequest, request: Request, user: dict = Depends(require_admin)):
     pool = await get_connection()
+    require_teacher = await get_bool_setting(pool, "school.class.require_teacher", False)
     before = await pool.fetchrow(
         """
         SELECT id, name, category_id, hall_id, duration_minutes, capacity, recurring_until, start_date,
@@ -1456,6 +1721,8 @@ async def update_group(group_id: int, data: UpdateGroupRequest, request: Request
             group_id, hall_id_value
         )
     if data.main_teacher_id is not None:
+        if require_teacher and (data.main_teacher_id == 0 or data.main_teacher_id is None):
+            raise HTTPException(status_code=400, detail="Нельзя убрать учителя у класса, так как он обязателен")
         await pool.execute(
             "UPDATE group_teachers SET is_main = FALSE WHERE group_id = $1",
             group_id
@@ -2653,8 +2920,12 @@ async def save_attendance(group_id: int, data: SaveAttendanceRequest, user: dict
             for record in data.records:
                 await conn.execute(
                     """
-                    INSERT INTO attendance_records (group_id, student_id, attended, lesson_date)
-                    VALUES ($1, $2, $3, $4)
+                    INSERT INTO attendance_records (group_id, class_subject_id, student_id, attended, lesson_date)
+                    VALUES (
+                        $1,
+                        (SELECT id FROM class_subjects WHERE group_id = $1 ORDER BY is_elective ASC, id ASC LIMIT 1),
+                        $2, $3, $4
+                    )
                     """,
                     group_id, record.student_id, record.attended, data.lesson_date
                 )
@@ -2746,8 +3017,14 @@ async def add_group_schedule(group_id: int, data: AddScheduleRequest, request: R
                     if not existing:
                         await conn.execute(
                             """
-                            INSERT INTO lessons (group_id, class_name, teacher_id, hall_id, start_time, duration_minutes)
-                            VALUES ($1, $2, $3, $4, $5, $6)
+                            INSERT INTO lessons (
+                                group_id, class_subject_id, class_name, teacher_id, hall_id, start_time, duration_minutes
+                            )
+                            VALUES (
+                                $1,
+                                (SELECT id FROM class_subjects WHERE group_id = $1 ORDER BY is_elective ASC, id ASC LIMIT 1),
+                                $2, $3, $4, $5, $6
+                            )
                             """,
                             group_id,
                             group["class_name"] or f"Занятие {group['name']}",
@@ -2935,8 +3212,14 @@ async def create_group_lessons(group_id: int, data: CreateLessonScheduleRequest,
                     )
                 await conn.execute(
                     """
-                    INSERT INTO lessons (group_id, class_name, teacher_id, hall_id, start_time, duration_minutes)
-                    VALUES ($1, $2, $3, $4, $5, $6)
+                    INSERT INTO lessons (
+                        group_id, class_subject_id, class_name, teacher_id, hall_id, start_time, duration_minutes
+                    )
+                    VALUES (
+                        $1,
+                        (SELECT id FROM class_subjects WHERE group_id = $1 ORDER BY is_elective ASC, id ASC LIMIT 1),
+                        $2, $3, $4, $5, $6
+                    )
                     """,
                     group_id,
                     group["class_name"] or f"Занятие {group['name']}",
@@ -2973,8 +3256,14 @@ async def create_group_lessons(group_id: int, data: CreateLessonScheduleRequest,
                     if not overlapping:
                         await conn.execute(
                             """
-                            INSERT INTO lessons (group_id, class_name, teacher_id, hall_id, start_time, duration_minutes)
-                            VALUES ($1, $2, $3, $4, $5, $6)
+                            INSERT INTO lessons (
+                                group_id, class_subject_id, class_name, teacher_id, hall_id, start_time, duration_minutes
+                            )
+                            VALUES (
+                                $1,
+                                (SELECT id FROM class_subjects WHERE group_id = $1 ORDER BY is_elective ASC, id ASC LIMIT 1),
+                                $2, $3, $4, $5, $6
+                            )
                             """,
                             group_id,
                             group["class_name"] or f"Занятие {group['name']}",
@@ -3247,8 +3536,14 @@ async def create_lesson(data: CreateLessonRequest, request: Request, user: dict 
     pool = await get_connection()
     result = await pool.fetchrow(
         """
-        INSERT INTO lessons (group_id, class_name, teacher_id, hall_id, start_time, duration_minutes)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO lessons (
+            group_id, class_subject_id, class_name, teacher_id, hall_id, start_time, duration_minutes
+        )
+        VALUES (
+            $1,
+            (SELECT id FROM class_subjects WHERE group_id = $1 ORDER BY is_elective ASC, id ASC LIMIT 1),
+            $2, $3, $4, $5, $6
+        )
         RETURNING id
         """,
         data.group_id, data.class_name, data.teacher_id, data.hall_id,
@@ -3676,8 +3971,14 @@ async def generate_lesson_instances(user: dict = Depends(require_admin)):
             try:
                 await pool.execute(
                     """
-                    INSERT INTO lessons (group_id, class_name, teacher_id, hall_id, start_time, duration_minutes)
-                    VALUES ($1, $2, $3, $4, $5, $6)
+                    INSERT INTO lessons (
+                        group_id, class_subject_id, class_name, teacher_id, hall_id, start_time, duration_minutes
+                    )
+                    VALUES (
+                        $1,
+                        (SELECT id FROM class_subjects WHERE group_id = $1 ORDER BY is_elective ASC, id ASC LIMIT 1),
+                        $2, $3, $4, $5, $6
+                    )
                     """,
                     group_schedule["group_id"],
                     group_schedule["class_name"] or f"Занятие {group_schedule['group_name']}",
@@ -3884,8 +4185,13 @@ async def save_lesson_attendance(
                 attended = record.status in ['P', 'E']
                 await conn.execute("""
                     INSERT INTO attendance_records
-                    (lesson_id, group_id, student_id, status, attended, recorded_at)
-                    VALUES ($1, $2, $3, $4, $5, NOW())
+                    (lesson_id, group_id, class_subject_id, student_id, status, attended, recorded_at)
+                    VALUES (
+                        $1,
+                        $2,
+                        (SELECT class_subject_id FROM lessons WHERE id = $1),
+                        $3, $4, $5, NOW()
+                    )
                 """, lesson_id, group_id, record.student_id, record.status, attended)
 
     after_by_student = {r.student_id: r.status for r in data.attendance}

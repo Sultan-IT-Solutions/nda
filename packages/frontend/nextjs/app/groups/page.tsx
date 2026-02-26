@@ -66,7 +66,7 @@ export default function GroupsPage() {
         );
         return;
       }
-      toast.error("Не удалось загрузить группы");
+  toast.error("Не удалось загрузить классы");
     } finally {
       setLoading(false);
     }
@@ -75,13 +75,13 @@ export default function GroupsPage() {
   const handleCreateGroup = async (groupData: any) => {
     try {
       await API.groups.create(groupData);
-      toast.success("Группа успешно создана");
+  toast.success("Класс успешно создан");
       setCreateGroupModalOpen(false);
       fetchGroups();
     } catch (error) {
       console.error("Error creating group:", error);
       handleApiError(error);
-      toast.error("Не удалось создать группу");
+  toast.error("Не удалось создать класс");
     }
   };
 
@@ -95,24 +95,24 @@ export default function GroupsPage() {
         <main className="p-8">
           <div className="flex justify-between items-center mb-8">
             <div>
-              <h2 className="text-3xl font-bold text-gray-900">Группы</h2>
-              <p className="text-gray-500 mt-1">Управление группами и списками</p>
+              <h2 className="text-3xl font-bold text-gray-900">Классы</h2>
+              <p className="text-gray-500 mt-1">Управление классами и списками</p>
             </div>
             <Button onClick={() => setCreateGroupModalOpen(true)}>
               <Plus className="w-5 h-5 mr-2" />
-              Создать группу
+              Создать класс
             </Button>
           </div>
 
           {loading ? (
             <div className="text-center py-12">
               <div className="w-12 h-12 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-              <p className="text-gray-500">Загрузка групп...</p>
+              <p className="text-gray-500">Загрузка классов...</p>
             </div>
           ) : groups.length === 0 ? (
             <Card>
               <CardContent className="py-12">
-                <p className="text-center text-gray-500">Нет групп</p>
+                <p className="text-center text-gray-500">Нет классов</p>
               </CardContent>
             </Card>
           ) : (
@@ -127,7 +127,7 @@ export default function GroupsPage() {
                     <div className="flex justify-between items-start">
                       <CardTitle className="text-xl">{group.name}</CardTitle>
                       <Badge variant={group.isActive ? "default" : "secondary"}>
-                        {group.isActive ? "Группа открыта" : "Группа закрыта"}
+                        {group.isActive ? "Класс открыт" : "Класс закрыт"}
                       </Badge>
                     </div>
                   </CardHeader>

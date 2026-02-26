@@ -8,5 +8,6 @@ from . import notifications
 from . import students
 from . import syssettings
 from . import teachers
+from . import transcript
 from . import users
 

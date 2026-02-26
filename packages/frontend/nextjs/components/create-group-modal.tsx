@@ -5,7 +5,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -43,11 +42,7 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
   const [formData, setFormData] = useState({
     name: '',
     capacity: '15',
-    description: '',
-    level: 'beginner',
-    direction: '',
     hall_id: '',
-    duration_minutes: '60',
     is_trial: false,
     trial_price: '',
     trial_currency: 'KZT',
@@ -56,8 +51,8 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
   });
 
   const handleSubmit = async () => {
-    if (!formData.name || !formData.direction || !formData.start_date) {
-      alert('Пожалуйста, заполните название группы, направление и дату начала');
+    if (!formData.name || !formData.start_date) {
+      alert('Пожалуйста, заполните название класса и дату начала');
       return;
     }
 
@@ -75,14 +70,14 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
     try {
       const groupData = {
         name: formData.name,
-        category_id: formData.direction ? parseInt(formData.direction) : null,
+        category_id: categories.length > 0 ? categories[0].id : null,
         hall_id: formData.hall_id ? parseInt(formData.hall_id) : null,
         main_teacher_id: null,
         start_time: null,
         capacity: parseInt(formData.capacity),
-        duration_minutes: parseInt(formData.duration_minutes),
+        duration_minutes: 60,
         recurring_days: null,
-        class_name: categories.find(cat => cat.id.toString() === formData.direction)?.name || formData.name,
+        class_name: categories[0]?.name || formData.name,
         is_trial: formData.is_trial,
         trial_price:
           formData.is_trial && formData.trial_price.trim().length > 0
@@ -100,11 +95,7 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
       setFormData({
         name: '',
         capacity: '15',
-        description: '',
-        level: 'beginner',
-        direction: '',
         hall_id: '',
-        duration_minutes: '60',
         is_trial: false,
         trial_price: '',
         trial_currency: 'KZT',
@@ -145,59 +136,23 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plus className="w-5 h-5" />
-            Создать новую группу
+            Создать новый класс
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 mt-6">
           <div>
-            <Label htmlFor="name">Название группы *</Label>
+            <Label htmlFor="name">Название класса *</Label>
             <Input
               id="name"
               value={formData.name}
               onChange={(e) => handleInputChange('name', e.target.value)}
-              placeholder="Например: Начинающие танцоры"
+              placeholder="Например: 5А класс"
               className="mt-1"
             />
           </div>
 
-          <div>
-            <Label htmlFor="direction">Направление *</Label>
-            <Select value={formData.direction} onValueChange={(value) => handleInputChange('direction', value)}>
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Выберите направление" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((category) => (
-                  <SelectItem key={category.id} value={category.id.toString()}>
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: category.color }}
-                      />
-                      {category.name}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="level">Уровень</Label>
-              <Select value={formData.level} onValueChange={(value) => handleInputChange('level', value)}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="beginner">Начинающий</SelectItem>
-                  <SelectItem value="intermediate">Средний</SelectItem>
-                  <SelectItem value="advanced">Продвинутый</SelectItem>
-                  <SelectItem value="professional">Профессиональный</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
             <div>
               <Label htmlFor="capacity">Вместимость</Label>
               <Input
@@ -210,21 +165,6 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
                 max="50"
               />
             </div>
-          </div>
-
-          <div>
-            <Label htmlFor="duration">Продолжительность занятия (минуты)</Label>
-            <Select value={formData.duration_minutes} onValueChange={(value) => handleInputChange('duration_minutes', value)}>
-              <SelectTrigger className="mt-1">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="45">45 минут</SelectItem>
-                <SelectItem value="60">60 минут</SelectItem>
-                <SelectItem value="90">90 минут</SelectItem>
-                <SelectItem value="120">120 минут</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -347,17 +287,6 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
             </div>
           )}
 
-          <div>
-            <Label htmlFor="description">Описание (необязательно)</Label>
-            <Textarea
-              id="description"
-              value={formData.description}
-              onChange={(e) => handleInputChange('description', e.target.value)}
-              placeholder="Краткое описание группы и особенностей занятий"
-              className="mt-1"
-              rows={3}
-            />
-          </div>
         </div>
 
         <div className="flex justify-end gap-3 pt-4 border-t">
@@ -370,7 +299,7 @@ export default function CreateGroupModal({ isOpen, onCloseAction, onSubmitAction
             className="bg-orange-500 hover:bg-orange-600 text-white"
           >
             {submitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-            Создать группу
+            Создать класс
           </Button>
         </div>
       </DialogContent>

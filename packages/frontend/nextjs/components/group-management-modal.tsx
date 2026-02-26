@@ -205,7 +205,7 @@ export default function GroupManagementModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">`
             <Users className="w-5 h-5" />
-            Управление группой: {groupName}
+            Управление классом: {groupName}
           </DialogTitle>
         </DialogHeader>
 
@@ -428,7 +428,7 @@ export default function GroupManagementModal({
                   <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                   <p className="text-gray-500">Нет запланированных занятий</p>
                   <p className="text-sm text-gray-400 mt-1">
-                    Убедитесь, что у группы установлено расписание с датами начала и окончания.
+                    Убедитесь, что у класса установлено расписание с датами начала и окончания.
                   </p>
                 </div>
               )}

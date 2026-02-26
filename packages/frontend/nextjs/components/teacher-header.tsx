@@ -36,7 +36,7 @@ type TeacherHeaderProps = {
 
 const navItems = [
   { label: "Главная", path: "/" },
-  { label: "Мои группы", path: "/teacher-groups" },
+  { label: "Мои классы", path: "/teacher-groups" },
   { label: "Расписание", path: "/teacher-groups/calendar" },
   { label: "Оценки", path: "/teacher-grades" },
   { label: "Профиль", path: "/profile" },

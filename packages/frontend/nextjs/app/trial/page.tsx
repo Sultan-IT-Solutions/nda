@@ -188,7 +188,7 @@ export default function TrialPage() {
           return;
         }
 
-        toast.error(message || 'Не удалось загрузить доступные группы');
+  toast.error(message || 'Не удалось загрузить доступные классы');
       } finally {
         setIsLoading(false);
       }

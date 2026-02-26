@@ -260,7 +260,7 @@ export default function AttendanceManager({ groupId, onSave }: AttendanceManager
   if (lessons.length === 0) {
     return (
       <div className="text-center py-8">
-        <p className="text-muted-foreground">Занятия для этой группы не найдены.</p>
+  <p className="text-muted-foreground">Занятия для этого класса не найдены.</p>
       </div>
     )
   }

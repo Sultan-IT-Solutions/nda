@@ -101,6 +101,13 @@ class UpdateSettingsRequest(BaseModel):
     trial_lessons_enabled: Optional[bool] = None
     grades_scale: Optional[str] = None
     teacher_edit_enabled: Optional[bool] = None
+    electives_enabled: Optional[bool] = None
+    class_require_teacher: Optional[bool] = None
+    class_require_hall: Optional[bool] = None
+    class_allow_multi_teachers: Optional[bool] = None
+    transcript_enabled: Optional[bool] = None
+    transcript_require_complete: Optional[bool] = None
+    transcript_exclude_cancelled: Optional[bool] = None
 
 
 @router.patch("/admin/settings")
@@ -118,6 +125,13 @@ async def admin_update_settings(
             "trial_lessons.enabled",
             "grades.scale",
             "grades.teacher_edit_enabled",
+            "school.electives.enabled",
+            "school.class.require_teacher",
+            "school.class.require_hall",
+            "school.class.allow_multi_teachers",
+            "transcript.enabled",
+            "transcript.require_complete",
+            "transcript.exclude_cancelled",
         ],
     )
 
@@ -144,6 +158,27 @@ async def admin_update_settings(
         updates += 1
     if data.teacher_edit_enabled is not None:
         await set_setting_value(pool, "grades.teacher_edit_enabled", bool(data.teacher_edit_enabled))
+        updates += 1
+    if data.electives_enabled is not None:
+        await set_setting_value(pool, "school.electives.enabled", bool(data.electives_enabled))
+        updates += 1
+    if data.class_require_teacher is not None:
+        await set_setting_value(pool, "school.class.require_teacher", bool(data.class_require_teacher))
+        updates += 1
+    if data.class_require_hall is not None:
+        await set_setting_value(pool, "school.class.require_hall", bool(data.class_require_hall))
+        updates += 1
+    if data.class_allow_multi_teachers is not None:
+        await set_setting_value(pool, "school.class.allow_multi_teachers", bool(data.class_allow_multi_teachers))
+        updates += 1
+    if data.transcript_enabled is not None:
+        await set_setting_value(pool, "transcript.enabled", bool(data.transcript_enabled))
+        updates += 1
+    if data.transcript_require_complete is not None:
+        await set_setting_value(pool, "transcript.require_complete", bool(data.transcript_require_complete))
+        updates += 1
+    if data.transcript_exclude_cancelled is not None:
+        await set_setting_value(pool, "transcript.exclude_cancelled", bool(data.transcript_exclude_cancelled))
         updates += 1
 
     if updates == 0:
@@ -212,6 +247,104 @@ async def admin_update_settings(
                 "setting": "grades.scale",
                 "from": current_scale,
                 "to": next_scale,
+            },
+            request=request,
+        )
+
+    if data.electives_enabled is not None:
+        enabled = bool(data.electives_enabled)
+        await log_action(
+            actor=user,
+            action_key=f"admin.settings.electives{'Enabled' if enabled else 'Disabled'}",
+            action_label=_toggle_label("Изменение системных настроек: Элективные предметы", enabled),
+            meta={
+                "setting": "school.electives.enabled",
+                "from": before_settings.get("school.electives.enabled"),
+                "to": enabled,
+            },
+            request=request,
+        )
+
+    if data.class_require_teacher is not None:
+        enabled = bool(data.class_require_teacher)
+        await log_action(
+            actor=user,
+            action_key=f"admin.settings.classRequireTeacher{'Enabled' if enabled else 'Disabled'}",
+            action_label=_toggle_label("Изменение системных настроек: Требовать учителя для класса", enabled),
+            meta={
+                "setting": "school.class.require_teacher",
+                "from": before_settings.get("school.class.require_teacher"),
+                "to": enabled,
+            },
+            request=request,
+        )
+
+    if data.class_require_hall is not None:
+        enabled = bool(data.class_require_hall)
+        await log_action(
+            actor=user,
+            action_key=f"admin.settings.classRequireHall{'Enabled' if enabled else 'Disabled'}",
+            action_label=_toggle_label("Изменение системных настроек: Требовать зал для класса", enabled),
+            meta={
+                "setting": "school.class.require_hall",
+                "from": before_settings.get("school.class.require_hall"),
+                "to": enabled,
+            },
+            request=request,
+        )
+
+    if data.class_allow_multi_teachers is not None:
+        enabled = bool(data.class_allow_multi_teachers)
+        await log_action(
+            actor=user,
+            action_key=f"admin.settings.classAllowMultiTeachers{'Enabled' if enabled else 'Disabled'}",
+            action_label=_toggle_label("Изменение системных настроек: Несколько учителей в классе", enabled),
+            meta={
+                "setting": "school.class.allow_multi_teachers",
+                "from": before_settings.get("school.class.allow_multi_teachers"),
+                "to": enabled,
+            },
+            request=request,
+        )
+
+    if data.transcript_enabled is not None:
+        enabled = bool(data.transcript_enabled)
+        await log_action(
+            actor=user,
+            action_key=f"admin.settings.transcript{'Enabled' if enabled else 'Disabled'}",
+            action_label=_toggle_label("Изменение системных настроек: Транскрипт", enabled),
+            meta={
+                "setting": "transcript.enabled",
+                "from": before_settings.get("transcript.enabled"),
+                "to": enabled,
+            },
+            request=request,
+        )
+
+    if data.transcript_require_complete is not None:
+        enabled = bool(data.transcript_require_complete)
+        await log_action(
+            actor=user,
+            action_key=f"admin.settings.transcriptRequireComplete{'Enabled' if enabled else 'Disabled'}",
+            action_label=_toggle_label("Изменение системных настроек: Полная проверка оценок", enabled),
+            meta={
+                "setting": "transcript.require_complete",
+                "from": before_settings.get("transcript.require_complete"),
+                "to": enabled,
+            },
+            request=request,
+        )
+
+    if data.transcript_exclude_cancelled is not None:
+        enabled = bool(data.transcript_exclude_cancelled)
+        await log_action(
+            actor=user,
+            action_key=f"admin.settings.transcriptExcludeCancelled{'Enabled' if enabled else 'Disabled'}",
+            action_label=_toggle_label("Изменение системных настроек: Исключать отмененные уроки", enabled),
+            meta={
+                "setting": "transcript.exclude_cancelled",
+                "from": before_settings.get("transcript.exclude_cancelled"),
+                "to": enabled,
             },
             request=request,
         )

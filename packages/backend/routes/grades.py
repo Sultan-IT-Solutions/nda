@@ -178,6 +178,7 @@ async def upsert_grade(data: UpsertGradeRequest, user: dict = Depends(require_te
     student_id: Optional[int] = None
     lesson_id: Optional[int] = None
     attendance_record_id: Optional[int] = None
+    class_subject_id: Optional[int] = None
 
     if data.attendance_record_id is not None:
         ar = await pool.fetchrow(
@@ -187,6 +188,7 @@ async def upsert_grade(data: UpsertGradeRequest, user: dict = Depends(require_te
                 ar.group_id,
                 ar.student_id,
                 ar.lesson_id,
+                ar.class_subject_id,
                 ar.recorded_at
             FROM attendance_records ar
             WHERE ar.id = $1
@@ -200,6 +202,7 @@ async def upsert_grade(data: UpsertGradeRequest, user: dict = Depends(require_te
         group_id = int(ar["group_id"]) if ar["group_id"] is not None else None
         student_id = int(ar["student_id"]) if ar["student_id"] is not None else None
         lesson_id = int(ar["lesson_id"]) if ar["lesson_id"] is not None else None
+        class_subject_id = int(ar["class_subject_id"]) if ar["class_subject_id"] is not None else None
     else:
         group_id = int(data.group_id) if data.group_id is not None else None
         student_id = int(data.student_id) if data.student_id is not None else None
@@ -225,6 +228,23 @@ async def upsert_grade(data: UpsertGradeRequest, user: dict = Depends(require_te
     )
     if not in_group:
         raise HTTPException(status_code=400, detail="Student is not enrolled in this group")
+
+    if class_subject_id is None and lesson_id is not None:
+        class_subject_id = await pool.fetchval(
+            "SELECT class_subject_id FROM lessons WHERE id = $1",
+            lesson_id,
+        )
+    if class_subject_id is None and group_id is not None:
+        class_subject_id = await pool.fetchval(
+            """
+            SELECT id
+            FROM class_subjects
+            WHERE group_id = $1
+            ORDER BY is_elective ASC, id ASC
+            LIMIT 1
+            """,
+            group_id,
+        )
 
     grade_dt = None
     if data.grade_date:
@@ -271,6 +291,7 @@ async def upsert_grade(data: UpsertGradeRequest, user: dict = Depends(require_te
         "attendance_record_id",
         "student_id",
         "group_id",
+        "class_subject_id",
         "lesson_id",
         "teacher_id",
         "comment",
@@ -280,6 +301,7 @@ async def upsert_grade(data: UpsertGradeRequest, user: dict = Depends(require_te
         attendance_record_id,
         student_id,
         group_id,
+        class_subject_id,
         lesson_id,
         teacher_id,
         data.comment,
@@ -303,6 +325,7 @@ async def upsert_grade(data: UpsertGradeRequest, user: dict = Depends(require_te
     update_assignments = [
         "attendance_record_id = COALESCE(EXCLUDED.attendance_record_id, grades.attendance_record_id)",
         "group_id = EXCLUDED.group_id",
+        "class_subject_id = COALESCE(EXCLUDED.class_subject_id, grades.class_subject_id)",
         "teacher_id = EXCLUDED.teacher_id",
         "comment = EXCLUDED.comment",
         "grade_date = COALESCE(EXCLUDED.grade_date, grades.grade_date)",
@@ -558,6 +581,10 @@ async def list_group_grades_for_teacher(group_id: int, user: dict = Depends(requ
             u.name AS student_name,
             gr.group_id,
             g.name AS group_name,
+            COALESCE(gr.class_subject_id, default_cs.class_subject_id) AS class_subject_id,
+            COALESCE(subj.id, default_cs.subject_id) AS subject_id,
+            COALESCE(subj.name, default_cs.subject_name) AS subject_name,
+            COALESCE(subj.color, default_cs.subject_color) AS subject_color,
             gr.attendance_record_id,
             gr.lesson_id,
             {value_select},
@@ -570,6 +597,20 @@ async def list_group_grades_for_teacher(group_id: int, user: dict = Depends(requ
         JOIN students s ON s.id = gr.student_id
         JOIN users u ON u.id = s.user_id
         JOIN groups g ON g.id = gr.group_id
+        LEFT JOIN class_subjects cs ON cs.id = gr.class_subject_id
+        LEFT JOIN subjects subj ON subj.id = cs.subject_id
+        LEFT JOIN LATERAL (
+            SELECT
+                cs.id AS class_subject_id,
+                s.id AS subject_id,
+                s.name AS subject_name,
+                s.color AS subject_color
+            FROM class_subjects cs
+            LEFT JOIN subjects s ON s.id = cs.subject_id
+            WHERE cs.group_id = gr.group_id
+            ORDER BY cs.is_elective ASC, cs.id ASC
+            LIMIT 1
+        ) default_cs ON TRUE
         LEFT JOIN attendance_records ar ON ar.id = gr.attendance_record_id
     WHERE gr.group_id = $1 AND gr.deleted_at IS NULL
         ORDER BY u.name, ar.recorded_at NULLS LAST, gr.grade_date NULLS LAST, gr.updated_at DESC
@@ -585,6 +626,10 @@ async def list_group_grades_for_teacher(group_id: int, user: dict = Depends(requ
                 "student_name": r["student_name"],
                 "group_id": r["group_id"],
                 "group_name": r["group_name"],
+                "class_subject_id": r["class_subject_id"],
+                "subject_id": r["subject_id"],
+                "subject_name": r["subject_name"],
+                "subject_color": r["subject_color"],
                 "attendance_record_id": r["attendance_record_id"],
                 "lesson_id": r["lesson_id"],
                 "value": float(r["value"]),
@@ -615,6 +660,10 @@ async def list_my_grades(user: dict = Depends(require_student)):
             gr.student_id,
             gr.group_id,
             g.name AS group_name,
+            COALESCE(gr.class_subject_id, default_cs.class_subject_id) AS class_subject_id,
+            COALESCE(subj.id, default_cs.subject_id) AS subject_id,
+            COALESCE(subj.name, default_cs.subject_name) AS subject_name,
+            COALESCE(subj.color, default_cs.subject_color) AS subject_color,
             gr.attendance_record_id,
             gr.lesson_id,
             {value_select},
@@ -626,6 +675,23 @@ async def list_my_grades(user: dict = Depends(require_student)):
             u_teacher.name AS teacher_name
         FROM grades gr
         JOIN groups g ON g.id = gr.group_id
+        LEFT JOIN class_subjects cs ON cs.id = gr.class_subject_id
+        LEFT JOIN subjects subj ON subj.id = cs.subject_id
+        LEFT JOIN LATERAL (
+            SELECT
+                cs.id AS class_subject_id,
+                s.id AS subject_id,
+                s.name AS subject_name,
+                s.color AS subject_color
+            FROM class_subjects cs
+            LEFT JOIN subjects s ON s.id = cs.subject_id
+            LEFT JOIN class_subject_students css
+                ON css.class_subject_id = cs.id AND css.student_id = $1
+            WHERE cs.group_id = gr.group_id
+              AND (cs.is_elective = FALSE OR css.student_id IS NOT NULL)
+            ORDER BY cs.is_elective ASC, cs.id ASC
+            LIMIT 1
+        ) default_cs ON TRUE
         JOIN teachers t ON t.id = gr.teacher_id
         JOIN users u_teacher ON u_teacher.id = t.user_id
         LEFT JOIN attendance_records ar ON ar.id = gr.attendance_record_id
@@ -642,6 +708,10 @@ async def list_my_grades(user: dict = Depends(require_student)):
                 "student_id": r["student_id"],
                 "group_id": r["group_id"],
                 "group_name": r["group_name"],
+                "class_subject_id": r["class_subject_id"],
+                "subject_id": r["subject_id"],
+                "subject_name": r["subject_name"],
+                "subject_color": r["subject_color"],
                 "attendance_record_id": r["attendance_record_id"],
                 "lesson_id": r["lesson_id"],
                 "value": float(r["value"]),
@@ -673,6 +743,10 @@ async def list_group_grades_for_admin(group_id: int, user: dict = Depends(requir
             u_student.name AS student_name,
             gr.group_id,
             g.name AS group_name,
+            COALESCE(gr.class_subject_id, default_cs.class_subject_id) AS class_subject_id,
+            COALESCE(subj.id, default_cs.subject_id) AS subject_id,
+            COALESCE(subj.name, default_cs.subject_name) AS subject_name,
+            COALESCE(subj.color, default_cs.subject_color) AS subject_color,
             gr.attendance_record_id,
             gr.lesson_id,
             {value_select},
@@ -685,6 +759,20 @@ async def list_group_grades_for_admin(group_id: int, user: dict = Depends(requir
         JOIN students s ON s.id = gr.student_id
         JOIN users u_student ON u_student.id = s.user_id
         JOIN groups g ON g.id = gr.group_id
+        LEFT JOIN class_subjects cs ON cs.id = gr.class_subject_id
+        LEFT JOIN subjects subj ON subj.id = cs.subject_id
+        LEFT JOIN LATERAL (
+            SELECT
+                cs.id AS class_subject_id,
+                s.id AS subject_id,
+                s.name AS subject_name,
+                s.color AS subject_color
+            FROM class_subjects cs
+            LEFT JOIN subjects s ON s.id = cs.subject_id
+            WHERE cs.group_id = gr.group_id
+            ORDER BY cs.is_elective ASC, cs.id ASC
+            LIMIT 1
+        ) default_cs ON TRUE
         JOIN teachers t ON t.id = gr.teacher_id
         JOIN users u_teacher ON u_teacher.id = t.user_id
         LEFT JOIN attendance_records ar ON ar.id = gr.attendance_record_id
@@ -702,6 +790,10 @@ async def list_group_grades_for_admin(group_id: int, user: dict = Depends(requir
                 "student_name": r["student_name"],
                 "group_id": r["group_id"],
                 "group_name": r["group_name"],
+                "class_subject_id": r["class_subject_id"],
+                "subject_id": r["subject_id"],
+                "subject_name": r["subject_name"],
+                "subject_color": r["subject_color"],
                 "attendance_record_id": r["attendance_record_id"],
                 "lesson_id": r["lesson_id"],
                 "value": float(r["value"]),

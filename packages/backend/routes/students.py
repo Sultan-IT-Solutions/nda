@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import Optional
+from typing import Dict, List, Optional
 from datetime import timedelta
 from app.database import get_connection
 from app.auth import require_auth, require_student
@@ -154,6 +154,51 @@ async def get_my_groups(user: dict = Depends(require_student)):
         """,
         student_id
     )
+    group_ids = [int(r["id"]) for r in rows]
+    subjects_by_group: Dict[int, List[dict]] = {}
+
+    if group_ids:
+        subject_rows = await pool.fetch(
+            """
+            SELECT
+                cs.group_id,
+                cs.id,
+                cs.subject_id,
+                cs.is_elective,
+                cs.hall_id,
+                h.name AS hall_name,
+                s.name AS subject_name,
+                s.color AS subject_color,
+                array_remove(array_agg(DISTINCT u.name), NULL) AS teacher_names
+            FROM class_subjects cs
+            LEFT JOIN subjects s ON s.id = cs.subject_id
+            LEFT JOIN halls h ON h.id = cs.hall_id
+            LEFT JOIN class_subject_teachers cst ON cst.class_subject_id = cs.id
+            LEFT JOIN teachers t ON t.id = cst.teacher_id
+            LEFT JOIN users u ON u.id = t.user_id
+            LEFT JOIN class_subject_students css
+                ON css.class_subject_id = cs.id AND css.student_id = $1
+            WHERE cs.group_id = ANY($2::int[])
+              AND (cs.is_elective = FALSE OR css.student_id IS NOT NULL)
+            GROUP BY cs.group_id, cs.id, cs.subject_id, cs.is_elective, cs.hall_id, h.name, s.name, s.color
+            ORDER BY s.name
+            """,
+            student_id,
+            group_ids,
+        )
+
+        for row in subject_rows:
+            subjects_by_group.setdefault(int(row["group_id"]), []).append({
+                "id": int(row["id"]),
+                "subject_id": row["subject_id"],
+                "subject_name": row["subject_name"],
+                "subject_color": row["subject_color"],
+                "is_elective": bool(row["is_elective"]),
+                "hall_id": row["hall_id"],
+                "hall_name": row["hall_name"],
+                "teacher_names": [str(n) for n in (row["teacher_names"] or []) if n],
+            })
+
     groups = []
     for r in rows:
         enrolled = int(r["enrolled"]) if r["enrolled"] else 0
@@ -177,7 +222,8 @@ async def get_my_groups(user: dict = Depends(require_student)):
             "is_trial_enrollment": bool(r["enrollment_is_trial"]) if r.get("enrollment_is_trial") is not None else False,
             "trial_selected_lesson_start_time": str(r["trial_selected_lesson_start_time"]) if r.get("trial_selected_lesson_start_time") else None,
             "start_date": r["start_date"].strftime("%Y-%m-%d") if r["start_date"] else None,
-            "end_date": r["recurring_until"].strftime("%Y-%m-%d") if r["recurring_until"] else None
+            "end_date": r["recurring_until"].strftime("%Y-%m-%d") if r["recurring_until"] else None,
+            "subjects": subjects_by_group.get(int(r["id"]), []),
         })
     return {"groups": groups}
 
@@ -198,6 +244,9 @@ async def get_my_attendance(user: dict = Depends(require_student)):
             l.is_cancelled,
             g.id as group_id,
             g.name as group_name,
+            COALESCE(l.class_subject_id, default_cs.class_subject_id) as class_subject_id,
+            COALESCE(subj.name, default_cs.subject_name) as subject_name,
+            COALESCE(subj.color, default_cs.subject_color) as subject_color,
             c.name as category_name,
             h.name as hall_name,
             u.name as teacher_name,
@@ -207,6 +256,22 @@ async def get_my_attendance(user: dict = Depends(require_student)):
         FROM lessons l
         JOIN groups g ON g.id = l.group_id
         JOIN group_students gs ON gs.group_id = g.id AND gs.student_id = $1
+        LEFT JOIN class_subjects cs ON cs.id = l.class_subject_id
+        LEFT JOIN subjects subj ON subj.id = cs.subject_id
+        LEFT JOIN LATERAL (
+            SELECT
+                cs.id AS class_subject_id,
+                s.name AS subject_name,
+                s.color AS subject_color
+            FROM class_subjects cs
+            LEFT JOIN subjects s ON s.id = cs.subject_id
+            LEFT JOIN class_subject_students css
+                ON css.class_subject_id = cs.id AND css.student_id = $1
+            WHERE cs.group_id = g.id
+              AND (cs.is_elective = FALSE OR css.student_id IS NOT NULL)
+            ORDER BY cs.is_elective ASC, cs.id ASC
+            LIMIT 1
+        ) default_cs ON TRUE
         LEFT JOIN LATERAL (
             SELECT lesson_start_time
             FROM trial_lesson_usages
@@ -234,6 +299,9 @@ async def get_my_attendance(user: dict = Depends(require_student)):
         SELECT
             g.id as group_id,
             g.name as group_name,
+            COALESCE(l.class_subject_id, default_cs.class_subject_id) as class_subject_id,
+            COALESCE(subj.name, default_cs.subject_name) as subject_name,
+            COALESCE(subj.color, default_cs.subject_color) as subject_color,
             c.name as category_name,
             COUNT(l.id) as total_lessons,
             COUNT(ar.id) as marked_lessons,
@@ -261,16 +329,38 @@ async def get_my_attendance(user: dict = Depends(require_student)):
             LIMIT 1
         ) tlu ON TRUE
         LEFT JOIN categories c ON c.id = g.category_id
-        LEFT JOIN lessons l
-          ON l.group_id = g.id
-         AND (
-            gs.is_trial = FALSE
-            OR tlu.lesson_start_time IS NULL
-            OR l.start_time = tlu.lesson_start_time
-         )
-        LEFT JOIN attendance_records ar ON ar.lesson_id = l.id AND ar.student_id = $1
-        GROUP BY g.id, g.name, c.name
-        ORDER BY g.name
+                LEFT JOIN lessons l
+                    ON l.group_id = g.id
+                 AND (
+                        gs.is_trial = FALSE
+                        OR tlu.lesson_start_time IS NULL
+                        OR l.start_time = tlu.lesson_start_time
+                 )
+                LEFT JOIN class_subjects cs2 ON cs2.id = l.class_subject_id
+                LEFT JOIN subjects subj ON subj.id = cs2.subject_id
+                LEFT JOIN LATERAL (
+                        SELECT
+                                cs.id AS class_subject_id,
+                                s.name AS subject_name,
+                                s.color AS subject_color
+                        FROM class_subjects cs
+                        LEFT JOIN subjects s ON s.id = cs.subject_id
+                        LEFT JOIN class_subject_students css
+                                ON css.class_subject_id = cs.id AND css.student_id = $1
+                        WHERE cs.group_id = g.id
+                            AND (cs.is_elective = FALSE OR css.student_id IS NOT NULL)
+                        ORDER BY cs.is_elective ASC, cs.id ASC
+                        LIMIT 1
+                ) default_cs ON TRUE
+                LEFT JOIN attendance_records ar ON ar.lesson_id = l.id AND ar.student_id = $1
+                GROUP BY
+                        g.id,
+                        g.name,
+                        c.name,
+                        COALESCE(l.class_subject_id, default_cs.class_subject_id),
+                        COALESCE(subj.name, default_cs.subject_name),
+                        COALESCE(subj.color, default_cs.subject_color)
+                ORDER BY g.name, COALESCE(subj.name, default_cs.subject_name)
         """,
         student_id
     )
@@ -300,6 +390,9 @@ async def get_my_attendance(user: dict = Depends(require_student)):
             }.get(r["status"], 0),
             "group_id": r["group_id"],
             "group_name": r["group_name"],
+            "class_subject_id": r["class_subject_id"],
+            "subject_name": r["subject_name"],
+            "subject_color": r["subject_color"],
             "category_name": r["category_name"],
             "hall_name": r["hall_name"],
             "teacher_name": r["teacher_name"],
@@ -314,9 +407,14 @@ async def get_my_attendance(user: dict = Depends(require_student)):
         percentage = round((total_points / max_points_marked) * 100) if max_points_marked > 0 else 0
         max_points_total = total_lessons * 2
         attendance_stats.append({
-            "id": r["group_id"],
-            "title": r["group_name"],
+            "id": r["class_subject_id"] or r["group_id"],
+            "title": r["subject_name"] or r["group_name"],
             "category": r["category_name"],
+            "group_id": r["group_id"],
+            "group_name": r["group_name"],
+            "class_subject_id": r["class_subject_id"],
+            "subject_name": r["subject_name"],
+            "subject_color": r["subject_color"],
             "total": total_lessons,
             "attended": r["present_count"] + r["late_count"] + r["excused_count"],
             "present": r["present_count"],

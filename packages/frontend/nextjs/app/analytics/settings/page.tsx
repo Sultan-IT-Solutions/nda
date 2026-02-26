@@ -30,10 +30,28 @@ type SettingsState = {
   trialLessonsEnabled: boolean
   gradesScale: "0-5" | "0-100"
   teacherEditEnabled: boolean
+  electivesEnabled: boolean
+  classRequireTeacher: boolean
+  classRequireHall: boolean
+  classAllowMultiTeachers: boolean
+  transcriptEnabled: boolean
+  transcriptRequireComplete: boolean
+  transcriptExcludeCancelled: boolean
 }
 
 type PendingPatch = {
-  key: "registration" | "trial" | "teacherEdit" | "gradesScale"
+  key:
+    | "registration"
+    | "trial"
+    | "teacherEdit"
+    | "gradesScale"
+    | "electives"
+    | "classRequireTeacher"
+    | "classRequireHall"
+    | "classAllowMultiTeachers"
+    | "transcriptEnabled"
+    | "transcriptRequireComplete"
+    | "transcriptExcludeCancelled"
   value: boolean | "0-5" | "0-100"
 }
 
@@ -56,6 +74,13 @@ export default function AdminSettingsPage() {
     trialLessonsEnabled: true,
     gradesScale: "0-5",
     teacherEditEnabled: true,
+    electivesEnabled: true,
+    classRequireTeacher: false,
+    classRequireHall: false,
+    classAllowMultiTeachers: true,
+    transcriptEnabled: true,
+    transcriptRequireComplete: true,
+    transcriptExcludeCancelled: true,
   })
 
   useEffect(() => {
@@ -90,6 +115,23 @@ export default function AdminSettingsPage() {
           trialLessonsEnabled: typeof s["trial_lessons.enabled"] === "boolean" ? s["trial_lessons.enabled"] : true,
           gradesScale: s["grades.scale"] === "0-100" ? "0-100" : "0-5",
           teacherEditEnabled: typeof s["grades.teacher_edit_enabled"] === "boolean" ? s["grades.teacher_edit_enabled"] : true,
+          electivesEnabled: typeof s["school.electives.enabled"] === "boolean" ? s["school.electives.enabled"] : true,
+          classRequireTeacher:
+            typeof s["school.class.require_teacher"] === "boolean" ? s["school.class.require_teacher"] : false,
+          classRequireHall:
+            typeof s["school.class.require_hall"] === "boolean" ? s["school.class.require_hall"] : false,
+          classAllowMultiTeachers:
+            typeof s["school.class.allow_multi_teachers"] === "boolean" ? s["school.class.allow_multi_teachers"] : true,
+          transcriptEnabled:
+            typeof s["transcript.enabled"] === "boolean" ? s["transcript.enabled"] : true,
+          transcriptRequireComplete:
+            typeof s["transcript.require_complete"] === "boolean"
+              ? s["transcript.require_complete"]
+              : true,
+          transcriptExcludeCancelled:
+            typeof s["transcript.exclude_cancelled"] === "boolean"
+              ? s["transcript.exclude_cancelled"]
+              : true,
         })
       } catch (err) {
         const message = handleApiError(err)
@@ -145,6 +187,77 @@ export default function AdminSettingsPage() {
     setConfirmOpen(true)
   }
 
+  const openSchoolToggleConfirm = (
+    key: "electives" | "classRequireTeacher" | "classRequireHall" | "classAllowMultiTeachers",
+    nextValue: boolean,
+  ) => {
+    setPendingPatch({ key, value: nextValue })
+    if (key === "electives") {
+      setConfirmTitle(nextValue ? "Включить элективные предметы?" : "Отключить элективные предметы?")
+      setConfirmDescription(
+        nextValue
+          ? "Администратор сможет создавать предметы с выбором отдельных учеников."
+          : "Создание элективных предметов будет недоступно.",
+      )
+    } else if (key === "classRequireTeacher") {
+      setConfirmTitle(nextValue ? "Требовать учителя для класса?" : "Снять требование учителя?")
+      setConfirmDescription(
+        nextValue
+          ? "Без назначенного учителя класс нельзя будет сохранить."
+          : "Класс можно будет сохранить без учителя.",
+      )
+    } else if (key === "classRequireHall") {
+      setConfirmTitle(nextValue ? "Требовать зал для класса?" : "Снять требование зала?")
+      setConfirmDescription(
+        nextValue
+          ? "Без выбранного зала класс нельзя будет сохранить."
+          : "Класс можно будет сохранить без зала.",
+      )
+    } else {
+      setConfirmTitle(nextValue ? "Разрешить несколько учителей?" : "Запретить несколько учителей?")
+      setConfirmDescription(
+        nextValue
+          ? "К классу можно будет назначать нескольких учителей."
+          : "Класс будет хранить только одного основного учителя.",
+      )
+    }
+    setConfirmOpen(true)
+  }
+
+  const openTranscriptConfirm = (nextValue: boolean) => {
+    setPendingPatch({ key: "transcriptEnabled", value: nextValue })
+    setConfirmTitle(nextValue ? "Включить транскрипт?" : "Отключить транскрипт?")
+    setConfirmDescription(
+      nextValue
+        ? "Студенты смогут видеть опубликованные оценки в транскрипте."
+        : "Страница транскрипта будет недоступна для студентов, а публикация отключена.",
+    )
+    setConfirmOpen(true)
+  }
+
+  const openTranscriptToggleConfirm = (
+    key: "transcriptRequireComplete" | "transcriptExcludeCancelled",
+    nextValue: boolean,
+  ) => {
+    setPendingPatch({ key, value: nextValue })
+    if (key === "transcriptRequireComplete") {
+      setConfirmTitle(nextValue ? "Требовать полный журнал?" : "Разрешить неполный журнал?")
+      setConfirmDescription(
+        nextValue
+          ? "Публикация транскрипта будет доступна только если у всех учеников есть оценки по всем урокам."
+          : "Можно публиковать транскрипт даже при неполных оценках.",
+      )
+    } else {
+      setConfirmTitle(nextValue ? "Исключать отмененные уроки?" : "Учитывать отмененные уроки?")
+      setConfirmDescription(
+        nextValue
+          ? "Отмененные уроки не будут участвовать в проверке полноты оценок."
+          : "Отмененные уроки будут учитываться в проверке полноты оценок.",
+      )
+    }
+    setConfirmOpen(true)
+  }
+
   const applyPendingPatch = async () => {
     if (!pendingPatch) return
     setUpdatingKey(pendingPatch.key)
@@ -156,8 +269,22 @@ export default function AdminSettingsPage() {
         res = await API.admin.updateSettings({ trial_lessons_enabled: Boolean(pendingPatch.value) })
       } else if (pendingPatch.key === "gradesScale") {
         res = await API.admin.updateSettings({ grades_scale: pendingPatch.value as "0-5" | "0-100" })
-      } else {
+      } else if (pendingPatch.key === "teacherEdit") {
         res = await API.admin.updateSettings({ teacher_edit_enabled: Boolean(pendingPatch.value) })
+      } else if (pendingPatch.key === "electives") {
+        res = await API.admin.updateSettings({ electives_enabled: Boolean(pendingPatch.value) })
+      } else if (pendingPatch.key === "transcriptEnabled") {
+        res = await API.admin.updateSettings({ transcript_enabled: Boolean(pendingPatch.value) })
+      } else if (pendingPatch.key === "transcriptRequireComplete") {
+        res = await API.admin.updateSettings({ transcript_require_complete: Boolean(pendingPatch.value) })
+      } else if (pendingPatch.key === "transcriptExcludeCancelled") {
+        res = await API.admin.updateSettings({ transcript_exclude_cancelled: Boolean(pendingPatch.value) })
+      } else if (pendingPatch.key === "classRequireTeacher") {
+        res = await API.admin.updateSettings({ class_require_teacher: Boolean(pendingPatch.value) })
+      } else if (pendingPatch.key === "classRequireHall") {
+        res = await API.admin.updateSettings({ class_require_hall: Boolean(pendingPatch.value) })
+      } else {
+        res = await API.admin.updateSettings({ class_allow_multi_teachers: Boolean(pendingPatch.value) })
       }
 
       const s = res?.settings ?? {}
@@ -168,6 +295,25 @@ export default function AdminSettingsPage() {
         gradesScale: s["grades.scale"] === "0-100" ? "0-100" : "0-5",
         teacherEditEnabled:
           typeof s["grades.teacher_edit_enabled"] === "boolean" ? s["grades.teacher_edit_enabled"] : prev.teacherEditEnabled,
+        electivesEnabled: typeof s["school.electives.enabled"] === "boolean" ? s["school.electives.enabled"] : prev.electivesEnabled,
+        classRequireTeacher:
+          typeof s["school.class.require_teacher"] === "boolean" ? s["school.class.require_teacher"] : prev.classRequireTeacher,
+        classRequireHall:
+          typeof s["school.class.require_hall"] === "boolean" ? s["school.class.require_hall"] : prev.classRequireHall,
+        classAllowMultiTeachers:
+          typeof s["school.class.allow_multi_teachers"] === "boolean"
+            ? s["school.class.allow_multi_teachers"]
+            : prev.classAllowMultiTeachers,
+        transcriptEnabled:
+          typeof s["transcript.enabled"] === "boolean" ? s["transcript.enabled"] : prev.transcriptEnabled,
+        transcriptRequireComplete:
+          typeof s["transcript.require_complete"] === "boolean"
+            ? s["transcript.require_complete"]
+            : prev.transcriptRequireComplete,
+        transcriptExcludeCancelled:
+          typeof s["transcript.exclude_cancelled"] === "boolean"
+            ? s["transcript.exclude_cancelled"]
+            : prev.transcriptExcludeCancelled,
       }))
 
       toast.success("Изменение применено")
@@ -305,6 +451,135 @@ export default function AdminSettingsPage() {
                     />
                   </div>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle className="text-base">Школьная логика</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between gap-6">
+                <div>
+                  <Label htmlFor="electivesEnabled">Элективные предметы</Label>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    Позволяет создавать предметы с выбором отдельных учеников.
+                  </div>
+                </div>
+                <Switch
+                  id="electivesEnabled"
+                  checked={settings.electivesEnabled}
+                  disabled={updatingKey !== null}
+                  onCheckedChange={(v) => openSchoolToggleConfirm("electives", Boolean(v))}
+                />
+              </div>
+
+              <Separator />
+
+              <div className="flex items-center justify-between gap-6">
+                <div>
+                  <Label htmlFor="classRequireTeacher">Обязательный учитель</Label>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    Требует назначения учителя для каждого класса.
+                  </div>
+                </div>
+                <Switch
+                  id="classRequireTeacher"
+                  checked={settings.classRequireTeacher}
+                  disabled={updatingKey !== null}
+                  onCheckedChange={(v) => openSchoolToggleConfirm("classRequireTeacher", Boolean(v))}
+                />
+              </div>
+
+              <Separator />
+
+              <div className="flex items-center justify-between gap-6">
+                <div>
+                  <Label htmlFor="classRequireHall">Обязательный зал</Label>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    Требует выбора зала для каждого класса.
+                  </div>
+                </div>
+                <Switch
+                  id="classRequireHall"
+                  checked={settings.classRequireHall}
+                  disabled={updatingKey !== null}
+                  onCheckedChange={(v) => openSchoolToggleConfirm("classRequireHall", Boolean(v))}
+                />
+              </div>
+
+              <Separator />
+
+              <div className="flex items-center justify-between gap-6">
+                <div>
+                  <Label htmlFor="classAllowMultiTeachers">Несколько учителей</Label>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    Позволяет назначать нескольких учителей на класс.
+                  </div>
+                </div>
+                <Switch
+                  id="classAllowMultiTeachers"
+                  checked={settings.classAllowMultiTeachers}
+                  disabled={updatingKey !== null}
+                  onCheckedChange={(v) => openSchoolToggleConfirm("classAllowMultiTeachers", Boolean(v))}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle className="text-base">Транскрипт</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between gap-6">
+                <div>
+                  <Label htmlFor="transcriptEnabled">Публикация транскрипта</Label>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    Разрешает администраторам публиковать оценки в транскрипт и показывать их студентам.
+                  </div>
+                </div>
+                <Switch
+                  id="transcriptEnabled"
+                  checked={settings.transcriptEnabled}
+                  disabled={updatingKey !== null}
+                  onCheckedChange={(v) => openTranscriptConfirm(Boolean(v))}
+                />
+              </div>
+
+              <Separator />
+
+              <div className="flex items-center justify-between gap-6">
+                <div>
+                  <Label htmlFor="transcriptRequireComplete">Полная проверка оценок</Label>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    Требовать оценки по каждому уроку для публикации.
+                  </div>
+                </div>
+                <Switch
+                  id="transcriptRequireComplete"
+                  checked={settings.transcriptRequireComplete}
+                  disabled={updatingKey !== null}
+                  onCheckedChange={(v) => openTranscriptToggleConfirm("transcriptRequireComplete", Boolean(v))}
+                />
+              </div>
+
+              <Separator />
+
+              <div className="flex items-center justify-between gap-6">
+                <div>
+                  <Label htmlFor="transcriptExcludeCancelled">Исключать отмененные уроки</Label>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    Отмененные занятия не учитываются при проверке полноты.
+                  </div>
+                </div>
+                <Switch
+                  id="transcriptExcludeCancelled"
+                  checked={settings.transcriptExcludeCancelled}
+                  disabled={updatingKey !== null}
+                  onCheckedChange={(v) => openTranscriptToggleConfirm("transcriptExcludeCancelled", Boolean(v))}
+                />
               </div>
             </CardContent>
           </Card>

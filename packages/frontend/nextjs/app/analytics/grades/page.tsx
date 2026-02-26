@@ -349,19 +349,19 @@ export default function AdminGradesPage() {
         <div className="p-4 sm:p-6 space-y-6">
           <div>
             <h1 className="text-3xl font-bold">Оценки</h1>
-            <p className="text-muted-foreground">Журнал оценок по группам</p>
+            <p className="text-muted-foreground">Журнал оценок по классам</p>
           </div>
 
           <Card>
             <CardHeader>
-              <CardTitle>Группы</CardTitle>
+              <CardTitle>Классы</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-col sm:flex-row gap-2">
                 <Input
                   value={groupQuery}
                   onChange={(e) => setGroupQuery(e.target.value)}
-                  placeholder="Поиск по названию группы"
+                  placeholder="Поиск по названию класса"
                 />
                 <Button variant="outline" onClick={() => setGroupQuery("")} className="sm:self-start">
                   Сбросить
@@ -409,7 +409,7 @@ export default function AdminGradesPage() {
             </Card>
           ) : lessons.length === 0 ? (
             <Card>
-              <CardContent className="py-8 text-muted-foreground">Нет уроков для выбранной группы</CardContent>
+              <CardContent className="py-8 text-muted-foreground">Нет уроков для выбранного класса</CardContent>
             </Card>
           ) : students.length === 0 ? (
             <Card>

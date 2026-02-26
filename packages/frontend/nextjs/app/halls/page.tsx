@@ -356,7 +356,7 @@ export default function HallsPage() {
                           </div>
 
                           <div className="bg-white rounded-lg border">
-                            <div className="p-4 border-b"><h4 className="font-semibold text-gray-900 flex items-center"><CalendarBlank className="w-5 h-5 mr-2 text-purple-600" />Группы и расписание в этом зале</h4></div>
+                            <div className="p-4 border-b"><h4 className="font-semibold text-gray-900 flex items-center"><CalendarBlank className="w-5 h-5 mr-2 text-purple-600" />Классы и расписание в этом зале</h4></div>
                             {hallDetails.groups.length === 0 ? (
                               <div className="p-8 text-center text-gray-500"><Info className="w-8 h-8 mx-auto mb-2 text-gray-400" /><p>В этом зале пока нет групп</p></div>
                             ) : (

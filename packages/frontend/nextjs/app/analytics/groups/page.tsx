@@ -83,7 +83,7 @@ export default function GroupAnalyticsPage() {
     }
 
     const BOM = '\uFEFF'
-    const headers = ['Группа', 'Зал', 'Преподаватель', 'Учеников', 'Вместимость', 'Часов в неделю', 'Посещаемость %', 'Статус']
+  const headers = ['Класс', 'Зал', 'Преподаватель', 'Учеников', 'Вместимость', 'Часов в неделю', 'Посещаемость %', 'Статус']
 
     const rows = groupsData.map(group => [
       group.groupName,
@@ -104,7 +104,7 @@ export default function GroupAnalyticsPage() {
       '',
       totalHours,
       '',
-      `${totalGroups} групп`
+  `${totalGroups} классов`
     ]
     rows.push(totalsRow)
 
@@ -118,7 +118,7 @@ export default function GroupAnalyticsPage() {
     const link = document.createElement('a')
     link.href = url
     const date = new Date().toISOString().split('T')[0]
-    link.download = `Аналитика_групп_${date}.csv`
+    link.download = `Аналитика_классов_${date}.csv`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -202,8 +202,8 @@ export default function GroupAnalyticsPage() {
         <main className="p-8">
           <div className="mb-6 flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-foreground mb-2">Аналитика групп</h1>
-              <p className="text-sm text-muted-foreground">Средняя посещаемость за месяц и количество учеников в группе</p>
+              <h1 className="text-3xl font-bold text-foreground mb-2">Аналитика классов</h1>
+              <p className="text-sm text-muted-foreground">Средняя посещаемость за месяц и количество учеников в классе</p>
             </div>
             <Button onClick={downloadExcel} variant="outline" className="gap-2">
               <Download size={16} />
@@ -219,7 +219,7 @@ export default function GroupAnalyticsPage() {
                     <Users size={22} className="text-blue-600" weight="duotone" />
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Всего групп</p>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Всего классов</p>
                     <p className="text-2xl font-semibold mt-0.5">{totalGroups}</p>
                   </div>
                 </div>
