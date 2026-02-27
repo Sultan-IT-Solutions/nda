@@ -443,14 +443,17 @@ async def get_scheduled_lessons(user: dict = Depends(require_teacher)):
         raise HTTPException(status_code=404, detail="Teacher profile not found")
     groups = await pool.fetch(
         """
-        SELECT
+        SELECT DISTINCT
             g.id, g.name, g.recurring_until,
             h.name AS hall_name
         FROM groups g
-        INNER JOIN group_teachers gt ON gt.group_id = g.id AND gt.teacher_id = $1
+        LEFT JOIN group_teachers gt ON gt.group_id = g.id AND gt.teacher_id = $1
+        LEFT JOIN class_subjects cs ON cs.group_id = g.id
+        LEFT JOIN class_subject_teachers cst ON cst.class_subject_id = cs.id AND cst.teacher_id = $1
         LEFT JOIN halls h ON h.id = g.hall_id
         WHERE g.is_closed = FALSE
         AND g.recurring_until IS NOT NULL
+        AND (gt.teacher_id IS NOT NULL OR cst.teacher_id IS NOT NULL)
         """,
         teacher_id
     )
@@ -562,6 +565,10 @@ async def get_teacher_weekly_schedule(
             OR EXISTS (
                 SELECT 1 FROM group_teachers gt
                 WHERE gt.group_id = l.group_id AND gt.teacher_id = $3
+            )
+            OR EXISTS (
+                SELECT 1 FROM class_subject_teachers cst
+                WHERE cst.class_subject_id = l.class_subject_id AND cst.teacher_id = $3
             )
           )
         ORDER BY l.start_time

@@ -145,11 +145,16 @@ export default function GroupDetailPage() {
   const [showAddStudentDialog, setShowAddStudentDialog] = useState(false)
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([])
   const [showScheduleDialog, setShowScheduleDialog] = useState(false)
+  const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false)
+  const [isRepeatUntilPopoverOpen, setIsRepeatUntilPopoverOpen] = useState(false)
+  const [isStartDatePopoverOpen, setIsStartDatePopoverOpen] = useState(false)
+  const [isEndDatePopoverOpen, setIsEndDatePopoverOpen] = useState(false)
 
   const [scheduleForm, setScheduleForm] = useState({
     date: '',
     start_time: '15:00',
     end_time: '16:00',
+    class_subject_id: '',
     repeat_enabled: false,
     repeat_frequency: 'weekly',
     repeat_until: ''
@@ -535,6 +540,11 @@ export default function GroupDetailPage() {
       return
     }
 
+    if (classSubjects.length > 0 && !scheduleForm.class_subject_id) {
+      toast.error("Выберите предмет")
+      return
+    }
+
     if (scheduleForm.start_time >= scheduleForm.end_time) {
       toast.error("Время начала должно быть раньше времени окончания")
       return
@@ -573,6 +583,7 @@ export default function GroupDetailPage() {
         date: scheduleForm.date,
         start_time: scheduleForm.start_time,
         end_time: scheduleForm.end_time,
+        class_subject_id: scheduleForm.class_subject_id ? parseInt(scheduleForm.class_subject_id, 10) : null,
         repeat_enabled: scheduleForm.repeat_enabled,
         repeat_frequency: scheduleForm.repeat_enabled ? scheduleForm.repeat_frequency : null,
         repeat_until: scheduleForm.repeat_enabled ? (scheduleForm.repeat_until || group?.end_date) : null
@@ -582,7 +593,7 @@ export default function GroupDetailPage() {
 
       toast.success("Занятие создано")
       setShowScheduleDialog(false)
-      setScheduleForm({ date: '', start_time: '15:00', end_time: '16:00', repeat_enabled: false, repeat_frequency: 'weekly', repeat_until: '' })
+  setScheduleForm({ date: '', start_time: '15:00', end_time: '16:00', class_subject_id: '', repeat_enabled: false, repeat_frequency: 'weekly', repeat_until: '' })
       fetchGroupDetails()
 
       setAttendanceRefreshKey(prev => prev + 1)
@@ -935,7 +946,7 @@ export default function GroupDetailPage() {
                     </div>
                     <div>
                       <Label>Дата начала:</Label>
-                      <Popover>
+                      <Popover modal={true} open={isStartDatePopoverOpen} onOpenChange={setIsStartDatePopoverOpen}>
                         <PopoverTrigger asChild>
                           <Button
                             variant="outline"
@@ -956,6 +967,7 @@ export default function GroupDetailPage() {
                             onSelect={(date) => {
                               if (date) {
                                 setEditForm({...editForm, start_date: format(date, 'yyyy-MM-dd')})
+                                setIsStartDatePopoverOpen(false)
                               }
                             }}
                             locale={ru}
@@ -967,7 +979,7 @@ export default function GroupDetailPage() {
                     </div>
                     <div>
                       <Label>Дата окончания:</Label>
-                      <Popover>
+                      <Popover modal={true} open={isEndDatePopoverOpen} onOpenChange={setIsEndDatePopoverOpen}>
                         <PopoverTrigger asChild>
                           <Button
                             variant="outline"
@@ -988,6 +1000,7 @@ export default function GroupDetailPage() {
                             onSelect={(date) => {
                               if (date) {
                                 setEditForm({...editForm, end_date: format(date, 'yyyy-MM-dd')})
+                                setIsEndDatePopoverOpen(false)
                               } else {
                                 setEditForm({...editForm, end_date: ''})
                               }
@@ -1123,6 +1136,7 @@ export default function GroupDetailPage() {
                         date: '',
                         start_time: '15:00',
                         end_time: '16:00',
+                        class_subject_id: classSubjects[0]?.id ? classSubjects[0].id.toString() : '',
                         repeat_enabled: false,
                         repeat_frequency: 'weekly',
                         repeat_until: ''
@@ -1428,7 +1442,12 @@ export default function GroupDetailPage() {
                 </p>
               </CardHeader>
               <CardContent>
-                <AttendanceManager key={attendanceRefreshKey} groupId={groupId} onSave={fetchGroupDetails} />
+                <AttendanceManager
+                  key={attendanceRefreshKey}
+                  groupId={groupId}
+                  classSubjects={classSubjects}
+                  onSave={fetchGroupDetails}
+                />
               </CardContent>
             </Card>
           </div>
@@ -1538,9 +1557,30 @@ export default function GroupDetailPage() {
               </div>
             )}
 
+            {classSubjects.length > 0 && (
+              <div>
+                <Label className="text-sm font-medium">Предмет *</Label>
+                <Select
+                  value={scheduleForm.class_subject_id}
+                  onValueChange={(value) => setScheduleForm({ ...scheduleForm, class_subject_id: value })}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Выберите предмет" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {classSubjects.map((subject) => (
+                      <SelectItem key={subject.id} value={subject.id.toString()}>
+                        {subject.subject_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div>
               <Label className="text-sm font-medium">Дата занятия *</Label>
-              <Popover>
+              <Popover modal={true} open={isDatePopoverOpen} onOpenChange={setIsDatePopoverOpen}>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
@@ -1561,6 +1601,7 @@ export default function GroupDetailPage() {
                     onSelect={(date) => {
                       if (date) {
                         setScheduleForm({...scheduleForm, date: format(date, 'yyyy-MM-dd')})
+                        setIsDatePopoverOpen(false)
                       }
                     }}
                     locale={ru}
@@ -1569,7 +1610,8 @@ export default function GroupDetailPage() {
                       const startDate = group?.start_date ? new Date(group.start_date) : today
                       const endDate = group?.end_date ? new Date(group.end_date) : null
                       const minDate = startDate > today ? startDate : today
-                      return date < minDate || (endDate ? date > endDate : false)
+                      const maxDate = endDate && endDate >= minDate ? endDate : null
+                      return date < minDate || (maxDate ? date > maxDate : false)
                     }}
                     initialFocus
                   />
@@ -1647,7 +1689,7 @@ export default function GroupDetailPage() {
 
                   <div>
                     <Label className="text-sm font-medium">Повторять до</Label>
-                    <Popover>
+                    <Popover modal={true} open={isRepeatUntilPopoverOpen} onOpenChange={setIsRepeatUntilPopoverOpen}>
                       <PopoverTrigger asChild>
                         <Button
                           variant="outline"
@@ -1668,6 +1710,7 @@ export default function GroupDetailPage() {
                           onSelect={(date) => {
                             if (date) {
                               setScheduleForm({...scheduleForm, repeat_until: format(date, 'yyyy-MM-dd')})
+                              setIsRepeatUntilPopoverOpen(false)
                             } else {
                               setScheduleForm({...scheduleForm, repeat_until: ''})
                             }
@@ -1676,7 +1719,8 @@ export default function GroupDetailPage() {
                           disabled={(date) => {
                             const startDate = scheduleForm.date ? new Date(scheduleForm.date) : new Date()
                             const endDate = group?.end_date ? new Date(group.end_date) : null
-                            return date < startDate || (endDate ? date > endDate : false)
+                            const maxDate = endDate && endDate >= startDate ? endDate : null
+                            return date < startDate || (maxDate ? date > maxDate : false)
                           }}
                           initialFocus
                         />
@@ -1723,7 +1767,7 @@ export default function GroupDetailPage() {
               </Button>
               <Button variant="outline" onClick={() => {
                 setShowScheduleDialog(false)
-                setScheduleForm({ date: '', start_time: '15:00', end_time: '16:00', repeat_enabled: false, repeat_frequency: 'weekly', repeat_until: '' })
+                setScheduleForm({ date: '', start_time: '15:00', end_time: '16:00', class_subject_id: '', repeat_enabled: false, repeat_frequency: 'weekly', repeat_until: '' })
               }}>
                 Отмена
               </Button>

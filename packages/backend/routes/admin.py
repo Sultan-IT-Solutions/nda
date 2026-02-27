@@ -392,6 +392,7 @@ class CreateLessonScheduleRequest(BaseModel):
     date: str
     start_time: str
     end_time: str
+    class_subject_id: Optional[int] = None
     repeat_enabled: bool = False
     repeat_frequency: Optional[str] = None
     repeat_until: Optional[str] = None
@@ -3184,6 +3185,18 @@ async def create_group_lessons(group_id: int, data: CreateLessonScheduleRequest,
         raise HTTPException(status_code=404, detail="Group not found")
     async with pool.acquire() as conn:
         async with conn.transaction():
+            selected_class_subject_id = data.class_subject_id
+            if selected_class_subject_id is None:
+                selected_class_subject_id = await conn.fetchval(
+                    """
+                    SELECT id
+                    FROM class_subjects
+                    WHERE group_id = $1
+                    ORDER BY is_elective ASC, id ASC
+                    LIMIT 1
+                    """,
+                    group_id,
+                )
             lessons_created = 0
             python_weekday = lesson_date.weekday()
             day_of_week = (python_weekday + 1) % 7
@@ -3217,7 +3230,7 @@ async def create_group_lessons(group_id: int, data: CreateLessonScheduleRequest,
                     )
                     VALUES (
                         $1,
-                        (SELECT id FROM class_subjects WHERE group_id = $1 ORDER BY is_elective ASC, id ASC LIMIT 1),
+                        $7,
                         $2, $3, $4, $5, $6
                     )
                     """,
@@ -3226,7 +3239,8 @@ async def create_group_lessons(group_id: int, data: CreateLessonScheduleRequest,
                     group["teacher_id"],
                     group["hall_id"],
                     lesson_datetime,
-                    duration_minutes
+                    duration_minutes,
+                    selected_class_subject_id
                 )
                 lessons_created = 1
             else:
@@ -3261,7 +3275,7 @@ async def create_group_lessons(group_id: int, data: CreateLessonScheduleRequest,
                             )
                             VALUES (
                                 $1,
-                                (SELECT id FROM class_subjects WHERE group_id = $1 ORDER BY is_elective ASC, id ASC LIMIT 1),
+                                $7,
                                 $2, $3, $4, $5, $6
                             )
                             """,
@@ -3270,7 +3284,8 @@ async def create_group_lessons(group_id: int, data: CreateLessonScheduleRequest,
                             group["teacher_id"],
                             group["hall_id"],
                             lesson_datetime,
-                            duration_minutes
+                            duration_minutes,
+                            selected_class_subject_id
                         )
                         lessons_created += 1
                     if data.repeat_frequency == "weekly":
@@ -3995,12 +4010,17 @@ async def generate_lesson_instances(user: dict = Depends(require_admin)):
 async def get_group_lessons_for_attendance(group_id: int, user: dict = Depends(require_admin_or_teacher)):
     pool = await get_connection()
     lessons = await pool.fetch("""
-        SELECT l.id, l.class_name, l.start_time, l.duration_minutes,
+     SELECT l.id, l.class_name, l.start_time, l.duration_minutes,
+         l.class_subject_id,
+         s.name as subject_name,
+         s.color as subject_color,
                g.name as group_name,
                u.name as teacher_name,
                l.is_rescheduled
         FROM lessons l
         JOIN groups g ON l.group_id = g.id
+     LEFT JOIN class_subjects cs ON cs.id = l.class_subject_id
+     LEFT JOIN subjects s ON s.id = cs.subject_id
         LEFT JOIN teachers t ON l.teacher_id = t.id
         LEFT JOIN users u ON t.user_id = u.id
         WHERE l.group_id = $1
@@ -4134,6 +4154,9 @@ async def get_group_lessons_for_attendance(group_id: int, user: dict = Depends(r
             "start_time": lesson["start_time"].isoformat(),
             "duration_minutes": lesson["duration_minutes"],
             "teacher_name": lesson["teacher_name"],
+            "class_subject_id": lesson["class_subject_id"],
+            "subject_name": lesson["subject_name"],
+            "subject_color": lesson["subject_color"],
             "students": student_attendance,
             "attendance_marked": len(attendance_dict) > 0,
             "is_rescheduled": lesson["is_rescheduled"],

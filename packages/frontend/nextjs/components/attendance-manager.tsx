@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Play, Check, X, Clock, UserX, Edit, Trash2, CalendarDays } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -43,16 +44,20 @@ interface LessonWithAttendance {
   start_time: string
   duration_minutes: number
   teacher_name?: string
+  class_subject_id?: number | null
+  subject_name?: string | null
+  subject_color?: string | null
   students: AttendanceStudent[]
   attendance_marked: boolean
 }
 
 interface AttendanceManagerProps {
   groupId: number
+  classSubjects?: { id: number; subject_name: string; subject_color?: string | null }[]
   onSave?: () => void
 }
 
-export default function AttendanceManager({ groupId, onSave }: AttendanceManagerProps) {
+export default function AttendanceManager({ groupId, classSubjects = [], onSave }: AttendanceManagerProps) {
   const [lessons, setLessons] = useState<LessonWithAttendance[]>([])
   const [selectedLessonId, setSelectedLessonId] = useState<number | null>(null)
   const [attendanceData, setAttendanceData] = useState<{ [studentId: number]: string }>({})
@@ -68,10 +73,17 @@ export default function AttendanceManager({ groupId, onSave }: AttendanceManager
     end_time: '',
     class_name: ''
   })
+  const [selectedSubjectId, setSelectedSubjectId] = useState<number | null>(null)
 
   useEffect(() => {
     fetchLessons()
   }, [groupId])
+
+  useEffect(() => {
+    if (classSubjects.length > 0 && selectedSubjectId === null) {
+      setSelectedSubjectId(classSubjects[0].id)
+    }
+  }, [classSubjects, selectedSubjectId])
 
   const fetchLessons = async () => {
     try {
@@ -84,8 +96,12 @@ export default function AttendanceManager({ groupId, onSave }: AttendanceManager
     }
   }
 
+  const filteredLessons = selectedSubjectId
+    ? lessons.filter((lesson) => lesson.class_subject_id === selectedSubjectId)
+    : lessons
+
   const handleLessonSelect = (lessonId: number) => {
-    const lesson = lessons.find(l => l.id === lessonId)
+    const lesson = filteredLessons.find(l => l.id === lessonId)
     if (!lesson) return
 
     setSelectedLessonId(lessonId)
@@ -251,7 +267,7 @@ export default function AttendanceManager({ groupId, onSave }: AttendanceManager
     }
   }
 
-  const selectedLesson = lessons.find(l => l.id === selectedLessonId)
+  const selectedLesson = filteredLessons.find(l => l.id === selectedLessonId)
 
   if (loading) {
     return <div className="text-center py-4">Загрузка занятий...</div>
@@ -267,6 +283,38 @@ export default function AttendanceManager({ groupId, onSave }: AttendanceManager
 
   return (
     <div className="space-y-6">
+      {classSubjects.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Предмет для посещаемости</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="max-w-sm">
+              <Label>Предмет</Label>
+              <Select
+                value={selectedSubjectId ? selectedSubjectId.toString() : ""}
+                onValueChange={(value) => {
+                  const nextValue = value ? parseInt(value, 10) : null
+                  setSelectedSubjectId(nextValue)
+                  setSelectedLessonId(null)
+                  setAttendanceData({})
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите предмет" />
+                </SelectTrigger>
+                <SelectContent>
+                  {classSubjects.map((subject) => (
+                    <SelectItem key={subject.id} value={subject.id.toString()}>
+                      {subject.subject_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       <div className="space-y-6">
         <h3 className="text-lg font-semibold">Занятия</h3>
 
@@ -301,7 +349,9 @@ export default function AttendanceManager({ groupId, onSave }: AttendanceManager
           </AlertDialogContent>
         </AlertDialog>
 
-        {lessons.map((lesson) => {
+        {filteredLessons.length === 0 ? (
+          <div className="text-sm text-muted-foreground">Нет занятий по выбранному предмету.</div>
+        ) : filteredLessons.map((lesson) => {
 
           const startTime = new Date(lesson.start_time)
           const endTime = new Date(startTime.getTime() + lesson.duration_minutes * 60000)

@@ -528,24 +528,30 @@ export default function ProfilePage() {
     setCurrentAttendancePage(0)
   }
 
-  const attendance = attendanceData.map(data => ({
-    id: data.id,
-    title: data.title || "Без названия",
-    category: data.category || "Без направления",
-    groupId: data.group_id ?? null,
-    groupName: data.group_name ?? null,
-    classSubjectId: data.class_subject_id ?? null,
-    subjectName: data.subject_name ?? null,
-    attended: data.attended,
-    present: data.present,
-    excused: data.excused,
-    missed: data.missed,
-    late: data.late,
-    total: data.total,
-    percentage: data.percentage,
-    points: data.points,
-    maxPoints: data.maxPoints
-  }))
+  const attendance = (isStudent ? subjectCards : []).map(subject => {
+    const data = attendanceData.find((item) => {
+      const subjectId = item.class_subject_id ?? subjectByGroupId.get(item.group_id)?.id
+      return subjectId === subject.id
+    })
+    return {
+      id: subject.id,
+      title: subject.title || "Без названия",
+      category: subject.groupName || "Без направления",
+      groupId: subject.groupId ?? null,
+      groupName: subject.groupName ?? null,
+      classSubjectId: subject.id,
+      subjectName: subject.title,
+      attended: data?.attended ?? 0,
+      present: data?.present ?? 0,
+      excused: data?.excused ?? 0,
+      missed: data?.missed ?? 0,
+      late: data?.late ?? 0,
+      total: data?.total ?? 0,
+      percentage: data?.percentage ?? 0,
+      points: data?.points ?? 0,
+      maxPoints: data?.maxPoints ?? 0,
+    }
+  })
 
   const attendanceCards = attendance.map((item) => {
     const group = typeof item.groupId === "number" ? groupById.get(item.groupId) : groupById.get(item.id)
